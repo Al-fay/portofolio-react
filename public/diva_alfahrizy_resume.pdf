@@ -1,0 +1,55 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [ 3 0 R ] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [ 0 0 595 842 ] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 1664 >>
+stream
+BT
+/F1 18 Tf
+50 780 Td (Diva Alfahrizy | Senior Fullstack Engineer & UI/UX Architect) Tj
+0 -25 Td /F1 10 Tf (Email: divaalfahrizy02878@gmail.com | Portfolio: https://diva-alfahrizy.dev) Tj
+0 -15 Td (Location: Pekalongan, Indonesia | Availability: Global Contracts & Startup Consultations) Tj
+0 -30 Td /F1 14 Tf (CORE TECH STACK) Tj
+0 -20 Td /F1 10 Tf (Frontend: React, Next.js, TypeScript, TailwindCSS, Svelte, Framer Motion) Tj
+0 -15 Td (Backend: Node.js, Hono, Supabase, Postgres, Redis, GraphQL, tRPC) Tj
+0 -15 Td (DevOps & Tools: Docker, AWS Cloud, Vercel, Cloudflare CI/CD, Git, figma) Tj
+0 -30 Td /F1 14 Tf (PROFESSIONAL HISTORY) Tj
+0 -20 Td /F1 11 Tf (Principal Software & UI Architect - Metacycle AI (2024 - Present)) Tj
+0 -15 Td /F1 10 Tf (- Spearheaded enterprise AI-dashboard modernization, boosting LCP by 42%) Tj
+0 -15 Td (- Implemented Supabase-mediated real-time collaboration engines, shrinking socket overheads by 30%) Tj
+0 -15 Td (- Built full-stack design systems using TailwindCSS and Framer Motion for international teams) Tj
+0 -25 Td /F1 11 Tf (Senior Fullstack Engineer - Veloce Fintech (2022 - 2024)) Tj
+0 -15 Td /F1 10 Tf (- Engineered transactional pipelines serving 120k+ active accounts with bank-grade security) Tj
+0 -15 Td (- Streamlined microservice APIs, cutting database response times by 35%) Tj
+0 -15 Td (- Managed 5 junior developers, deploying code with zero-downtime CI/CD) Tj
+0 -25 Td /F1 11 Tf (Interactive Developer - Axle Creative Engine (2019 - 2022)) Tj
+0 -15 Td /F1 10 Tf (- Crafted low-latency interfaces using Svelte & React, driving user engagement up 25%) Tj
+0 -15 Td (- Engineered Canvas and WebGL visualizers for immersive interactive Web-based installations) Tj
+0 -30 Td /F1 14 Tf (EDUCATION & ACCOMPLISHMENTS) Tj
+0 -20 Td /F1 10 Tf (Bachelor of Science in Computer Science - Graduate with Honors, Technical Architect Certified) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000244 00000 n 
+0000001979 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+2050
+%%EOF
