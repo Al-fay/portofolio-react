@@ -154,7 +154,7 @@ export const skillsList: SkillItem[] = [
   { name: 'React JS / React Native', category: 'frontend', icon: 'CodeReact' },
   { name: 'Next.js', category: 'frontend', icon: 'CodeReact' },
   { name: 'TanStack Start', category: 'frontend', icon: 'TanStack' },
-  { name: 'Bootstrap', category: 'frontend', icon: 'CodeReact' },
+  { name: 'Bootstrap', category: 'frontend', icon: 'Sparkles' },
   { name: 'TailwindCSS', category: 'frontend', icon: 'Tailwind' },
   { name: 'Framer Motion', category: 'frontend', icon: 'Sparkles' },
   { name: 'Node.js / Express', category: 'backend', icon: 'Server' },

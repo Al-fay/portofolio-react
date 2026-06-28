@@ -90,7 +90,8 @@ export interface Project {
     en: string;
     id: string;
   };
-  category: 'web' | 'mobile' | 'ai';
+  // category: 'web' | 'mobile' | 'ai';
+  category: 'web';
   tags: string[];
   link: string;
   image: string;

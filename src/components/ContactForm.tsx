@@ -84,11 +84,32 @@ export const ContactForm: React.FC<ContactFormProps> = ({ lang, dict }) => {
 
     setIsSending(true);
 
+    const url =
+      "https://script.google.com/macros/s/AKfycbx56DQXzbcWRCd34h_CjiBNGIKKuA1XH1B99VsJth6iWrT7v_-F6PnyaM46pVJb29kN/exec";
+    const formData = new FormData();
+
+    formData.append("name", form.name);
+    formData.append("email", form.email);
+    formData.append("company", form.company);
+    formData.append("message", form.message);
+
     // Simulate reliable API processing (Express endpoint / Supabase proxy flow state simulator)
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const response = await fetch(url, {
+      method: "POST",
+      body: formData,
+    });
+
+    const result = await response.text();
+
+    if (result !== "success") {
+      throw new Error("Gagal mengirim");
+    }
+
+    if (result === "success") {
+      setIsSuccess(true);
+    }
 
     setIsSending(false);
-    setIsSuccess(true);
     setForm({ name: "", email: "", company: "", message: "" });
     setTouched({});
   };
