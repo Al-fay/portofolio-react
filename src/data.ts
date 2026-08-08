@@ -174,7 +174,7 @@ export const experiencesList: Experience[] = [
     company: 'Kospin Jasa Syariah',
     role: {
       en: 'Mid-level Fullstack Developer & UI/UX Architect',
-      id: 'Developer Fullstack Mid-level & Arsitek UI/UX',
+      id: 'Mid-level Fullstack Developer & Arsitek UI/UX',
     },
     period: '2024 - ' + translations.en.experience.present,
     location: 'Indonesia',
@@ -242,7 +242,7 @@ export const projectsList: Project[] = [
     ],
     role: {
       en: 'Mid-level Fullstack Developer & Lead Engineer',
-      id: 'Developer Fullstack Mid-level & Lead Engineer',
+      id: 'Mid-level Fullstack Developer & Lead Engineer',
     },
     year: '2024',
     featured: true,
@@ -271,7 +271,7 @@ export const projectsList: Project[] = [
     ],
     role: {
       en: 'Fullstack Architect & Lead',
-      id: 'Arsitek Fullstack & Pimpinan Pengembang',
+      id: 'Fullstack Architect & Lead',
     },
     year: '2024',
     featured: true,
@@ -299,7 +299,7 @@ export const projectsList: Project[] = [
     ],
     role: {
       en: 'Fullstack Web Engineer',
-      id: 'Insinyur Web Fullstack',
+      id: 'Fullstack Web Engineer',
     },
     year: '2023',
     featured: true,
@@ -327,7 +327,7 @@ export const projectsList: Project[] = [
     ],
     role: {
       en: 'Independent Developer',
-      id: 'Pengembang Mandiri',
+      id: 'Independent Developer',
     },
     year: '2022',
     featured: false,
