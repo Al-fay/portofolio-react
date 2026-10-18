@@ -17,7 +17,7 @@ interface SkillsCarouselProps {
   lang: "en" | "id";
 }
 
-const AUTOPLAY_MS = 4000;
+const AUTOPLAY_MS = 3000;
 const EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
 const copy = {
@@ -304,11 +304,7 @@ export const SkillsCarousel: React.FC<SkillsCarouselProps> = ({ lang }) => {
   const [visibleCount, setVisibleCount] = useState(4);
   const [trackWidth, setTrackWidth] = useState(0);
 
-  const [userPaused, setUserPaused] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-  );
+  const [userPaused, setUserPaused] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -385,7 +381,6 @@ export const SkillsCarousel: React.FC<SkillsCarouselProps> = ({ lang }) => {
     !focused &&
     !dragging &&
     !tabHidden &&
-    inView &&
     maxIndex > 0;
 
   useEffect(() => {
