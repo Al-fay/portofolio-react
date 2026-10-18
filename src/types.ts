@@ -1,4 +1,4 @@
-export type Language = 'en' | 'id';
+export type Language = "en" | "id";
 
 export interface TranslationDict {
   nav: {
@@ -60,7 +60,7 @@ export interface TranslationDict {
     title: string;
     subtitle: string;
   };
-  about?: {
+  about: {
     title: string;
     subtitle: string;
     heading: string;
@@ -91,7 +91,7 @@ export interface Project {
     id: string;
   };
   // category: 'web' | 'mobile' | 'ai';
-  category: 'web';
+  category: "web";
   tags: string[];
   link: string;
   image: string;
@@ -121,6 +121,6 @@ export interface Experience {
 
 export interface SkillItem {
   name: string;
-  category: 'frontend' | 'backend' | 'database' | 'devops' | 'tools';
+  category: "frontend" | "backend" | "database" | "devops" | "tools";
   icon: string; // lucide icon name or logo representation
 }

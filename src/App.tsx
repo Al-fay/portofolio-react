@@ -1,5 +1,16 @@
-import React, { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import React, { useState, useEffect, useRef } from "react";
+import {
+  motion,
+  AnimatePresence,
+  animate,
+  useScroll,
+  useSpring,
+  useMotionValue,
+  useMotionValueEvent,
+  useMotionTemplate,
+  useReducedMotion,
+  useTransform,
+} from "motion/react";
 import { Language, TranslationDict } from "./types";
 import { translations } from "./data";
 import { Hero } from "./components/Hero";
@@ -20,27 +31,169 @@ import {
   Github,
   Linkedin,
   Mail,
-  ChevronRight,
   Terminal,
-  BookOpen,
   ArrowUp,
   FileDown,
 } from "lucide-react";
 
+const EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
+
+const navItems: {
+  key: keyof TranslationDict["nav"];
+  target: string;
+  observe: string;
+}[] = [
+  { key: "about", target: "about-section", observe: "about-section" },
+  { key: "skills", target: "tech-skills-anchor", observe: "skills-section" },
+  {
+    key: "experience",
+    target: "experience-section",
+    observe: "experience-section",
+  },
+  { key: "projects", target: "projects-section", observe: "projects-section" },
+  { key: "contact", target: "contact-section", observe: "contact-section" },
+];
+
+const socials: {
+  id: string;
+  href: string;
+  label: string;
+  Icon: typeof Github;
+  hover: string;
+  external: boolean;
+}[] = [
+  {
+    id: "social-github-link",
+    href: "https://github.com/Al-Fay",
+    label: "GitHub",
+    Icon: Github,
+    hover: "hover:text-neutral-900 dark:hover:text-white",
+    external: true,
+  },
+  {
+    id: "social-linkedin-link",
+    href: "https://www.linkedin.com/in/muhammad-diva-alfahrizy-1422ba208/",
+    label: "LinkedIn",
+    Icon: Linkedin,
+    hover: "hover:text-sky-600 dark:hover:text-sky-400",
+    external: true,
+  },
+  {
+    id: "social-email-link",
+    href: "mailto:divaalfahrizy02878@gmail.com",
+    label: "Email",
+    Icon: Mail,
+    hover: "hover:text-amber-600 dark:hover:text-amber-400",
+    external: false,
+  },
+];
+
+const menuContainer = {
+  hidden: { opacity: 0, y: -15 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      type: "spring" as const,
+      stiffness: 350,
+      damping: 28,
+      staggerChildren: 0.06,
+      delayChildren: 0.05,
+    },
+  },
+};
+
+const menuItem = {
+  hidden: { opacity: 0, x: -16 },
+  show: { opacity: 1, x: 0 },
+};
+
+function Reveal({
+  children,
+  delay = 0,
+  className,
+}: {
+  children: React.ReactNode;
+  delay?: number;
+  className?: string;
+}) {
+  const reduce = useReducedMotion();
+  return (
+    <motion.div
+      initial={reduce ? false : { opacity: 0, y: 32 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-80px" }}
+      transition={{ duration: 0.8, ease: EASE, delay }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+function ThemeIcon({
+  theme,
+  className = "w-4 h-4",
+}: {
+  theme: "light" | "dark";
+  className?: string;
+}) {
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <motion.span
+        key={theme}
+        initial={{ rotate: -90, opacity: 0, scale: 0.5 }}
+        animate={{ rotate: 0, opacity: 1, scale: 1 }}
+        exit={{ rotate: 90, opacity: 0, scale: 0.5 }}
+        transition={{ duration: 0.25, ease: "easeOut" }}
+        className="flex items-center justify-center"
+      >
+        {theme === "light" ? (
+          <Moon className={className} />
+        ) : (
+          <Sun className={`${className} text-amber-400`} />
+        )}
+      </motion.span>
+    </AnimatePresence>
+  );
+}
+
+function SectionTitle({
+  title,
+  subtitle,
+}: {
+  title?: string;
+  subtitle?: string;
+}) {
+  return (
+    <div className="text-center">
+      <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-neutral-900 dark:text-white">
+        {title}
+      </h2>
+      <motion.div
+        initial={{ scaleX: 0 }}
+        whileInView={{ scaleX: 1 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.8, ease: EASE, delay: 0.2 }}
+        className="mx-auto mt-3 h-[2px] w-16 origin-center rounded-full bg-gradient-to-r from-transparent via-amber-500 to-transparent"
+      />
+      <p className="text-neutral-500 dark:text-neutral-400 text-xs mt-3 font-mono uppercase tracking-widest max-w-lg mx-auto">
+        {subtitle}
+      </p>
+    </div>
+  );
+}
+
 export default function App() {
-  // Splash Screen State
+  const reduce = useReducedMotion();
+
   const [showSplash, setShowSplash] = useState(true);
 
-  // Scroll progress state for color-changing bar
-  const [scrollProgress, setScrollProgress] = useState(0);
-
-  // Locale State
   const [lang, setLang] = useState<Language>(() => {
     const saved = localStorage.getItem("portfolio-lang");
     return saved === "id" || saved === "en" ? saved : "en";
   });
 
-  // Dark/Light Theme State
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const saved = localStorage.getItem("portfolio-theme");
     if (saved === "light" || saved === "dark") return saved;
@@ -49,7 +202,6 @@ export default function App() {
       : "light";
   });
 
-  // Theme Toggling Animation States
   const [activeTransitionTheme, setActiveTransitionTheme] = useState<
     "light" | "dark" | null
   >(null);
@@ -58,30 +210,40 @@ export default function App() {
     y: "50%",
   });
 
-  // Mobile Menu State
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  // Navbar Visibility State
   const [visible, setVisible] = useState(true);
-
-  // Scroll to Top Button Visibility State
+  const [scrolled, setScrolled] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [activeSection, setActiveSection] = useState("about-section");
 
-  // Active translation dictionary
   const dict: TranslationDict = translations[lang];
 
-  // Language switcher active handler
+  const { scrollY, scrollYProgress } = useScroll();
+  const progress = useSpring(scrollYProgress, {
+    stiffness: 140,
+    damping: 30,
+    restDelta: 0.001,
+  });
+  const lastY = useRef(0);
+
+  const splashCount = useMotionValue(0);
+  const splashText = useTransform(splashCount, (v) => `${Math.round(v)}`);
+
+  const mouseX = useMotionValue(-600);
+  const mouseY = useMotionValue(-600);
+  const spotX = useSpring(mouseX, { stiffness: 180, damping: 28 });
+  const spotY = useSpring(mouseY, { stiffness: 180, damping: 28 });
+  const spotlight = useMotionTemplate`radial-gradient(520px circle at ${spotX}px ${spotY}px, rgba(245,158,11,0.09), transparent 70%)`;
+
   const toggleLanguage = () => {
     const nextLang: Language = lang === "en" ? "id" : "en";
     setLang(nextLang);
     localStorage.setItem("portfolio-lang", nextLang);
   };
 
-  // Theme Toggler
   const toggleTheme = (e?: React.MouseEvent) => {
     const nextTheme = theme === "light" ? "dark" : "light";
 
-    // Set originating center coordinates for circular clip-path expansion
     if (e && e.clientX && e.clientY) {
       setTransitionOrigin({
         x: `${e.clientX}px`,
@@ -91,30 +253,39 @@ export default function App() {
       setTransitionOrigin({ x: "50%", y: "50%" });
     }
 
-    // Trigger full screen visual expansion state
     setActiveTransitionTheme(nextTheme);
 
-    // Apply the theme change 150ms into the wave so it flips seamlessly
     setTimeout(() => {
       setTheme(nextTheme);
       localStorage.setItem("portfolio-theme", nextTheme);
     }, 150);
 
-    // Fade overlay and allow user interaction again after transition completes
     setTimeout(() => {
       setActiveTransitionTheme(null);
     }, 600);
   };
 
-  // Turn off splash screen after a short delay
   useEffect(() => {
+    const controls = animate(splashCount, 100, {
+      duration: 1.8,
+      ease: "easeInOut",
+    });
     const timer = setTimeout(() => {
       setShowSplash(false);
     }, 2200);
-    return () => clearTimeout(timer);
-  }, []);
+    return () => {
+      controls.stop();
+      clearTimeout(timer);
+    };
+  }, [splashCount]);
 
-  // Apply theme to HTML tag
+  useEffect(() => {
+    document.body.style.overflow = showSplash ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [showSplash]);
+
   useEffect(() => {
     const root = document.documentElement;
     if (theme === "dark") {
@@ -124,12 +295,9 @@ export default function App() {
     }
   }, [theme]);
 
-  // Dynamic SEO meta updates based on active language (react-helmet lightweight equivalent)
   useEffect(() => {
-    // 1. Language HTML Attribute
     document.documentElement.lang = lang;
 
-    // 2. SEO Content Definitions
     const seoData = {
       en: {
         title:
@@ -150,10 +318,8 @@ export default function App() {
 
     const currentSeo = seoData[lang];
 
-    // 3. Document Title
     document.title = currentSeo.title;
 
-    // Helper to query and update meta tag attributes safely
     const setMetaTagValue = (selector: string, value: string) => {
       const element = document.querySelector(selector);
       if (element) {
@@ -161,7 +327,6 @@ export default function App() {
       }
     };
 
-    // 4. Synchronize Meta Tags
     setMetaTagValue('meta[name="description"]', currentSeo.description);
     setMetaTagValue('meta[name="keywords"]', currentSeo.keywords);
     setMetaTagValue('meta[property="og:title"]', currentSeo.title);
@@ -170,173 +335,225 @@ export default function App() {
     setMetaTagValue('meta[name="twitter:description"]', currentSeo.description);
   }, [lang]);
 
-  // Scroll listener to hide/show navbar & track scroll status
-  useEffect(() => {
-    let lastScrollY = window.scrollY;
+  useMotionValueEvent(scrollY, "change", (y) => {
+    setShowScrollTop(y > 300);
+    setScrolled(y > 20);
 
-    const handleScroll = () => {
-      const currentScrollY = window.scrollY;
-      const difference = currentScrollY - lastScrollY;
+    const difference = y - lastY.current;
 
-      // Calculate scroll progress for the progress bar
-      const winScroll =
-        document.documentElement.scrollTop || document.body.scrollTop;
-      const height =
-        document.documentElement.scrollHeight -
-        document.documentElement.clientHeight;
-      const scrolled = height > 0 ? (winScroll / height) * 100 : 0;
-      setScrollProgress(scrolled);
-
-      // Show scroll-to-top button if scrolled down past 300px
-      if (currentScrollY > 300) {
-        setShowScrollTop(true);
+    if (y < 50) {
+      setVisible(true);
+    } else if (Math.abs(difference) > 8) {
+      if (difference > 0) {
+        setVisible(false);
+        setMobileMenuOpen(false);
       } else {
-        setShowScrollTop(false);
-      }
-
-      // Always show navbar near the top of the page (within 50px)
-      if (currentScrollY < 50) {
         setVisible(true);
-      } else if (Math.abs(difference) > 8) {
-        // scroll threshold in pixels
-        if (difference > 0) {
-          // scrolling down -> hide navbar
-          setVisible(false);
-          setMobileMenuOpen(false);
-        } else {
-          // scrolling up -> show navbar
-          setVisible(true);
-        }
-        lastScrollY = currentScrollY;
       }
-    };
+      lastY.current = y;
+    }
+  });
 
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", handleScroll);
-    };
+  useEffect(() => {
+    const elements = navItems
+      .map((item) => document.getElementById(item.observe))
+      .filter((el): el is HTMLElement => el !== null);
+
+    if (elements.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) setActiveSection(entry.target.id);
+        });
+      },
+      { rootMargin: "-40% 0px -55% 0px" },
+    );
+
+    elements.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
   }, []);
 
-  // Smooth scroll helper
+  useEffect(() => {
+    if (reduce) return;
+    if (!window.matchMedia("(pointer: fine)").matches) return;
+
+    const handlePointerMove = (e: PointerEvent) => {
+      mouseX.set(e.clientX);
+      mouseY.set(e.clientY);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove, {
+      passive: true,
+    });
+    return () => window.removeEventListener("pointermove", handlePointerMove);
+  }, [reduce, mouseX, mouseY]);
+
   const scrollToSection = (id: string) => {
     setMobileMenuOpen(false);
     const element = document.getElementById(id);
     if (element) {
-      element.scrollIntoView({ behavior: "smooth", block: "start" });
+      element.scrollIntoView({
+        behavior: reduce ? "auto" : "smooth",
+        block: "start",
+      });
     }
   };
 
-  // Smooth scroll back to top handler
   const scrollToTop = () => {
     window.scrollTo({
       top: 0,
-      behavior: "smooth",
+      behavior: reduce ? "auto" : "smooth",
     });
   };
 
   return (
     <div
-      className="min-h-screen bg-white dark:bg-[#0A0A0B] text-neutral-800 dark:text-[#E2E2E2] transition-colors duration-300 font-sans selection:bg-amber-500/20"
+      className="min-h-screen bg-white dark:bg-[#0A0A0B] text-neutral-800 dark:text-[#E2E2E2] transition-colors duration-300 font-sans selection:bg-amber-500/25"
       id="portfolio-app-root"
     >
-      {/* Immersive Scroll Progress Bar */}
-      <div
-        className="fixed top-0 left-0 h-[3px] z-[100] transition-all duration-75 bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 dark:from-amber-400 dark:via-orange-400 dark:to-rose-500 origin-left"
-        style={{ width: `${scrollProgress}%` }}
+      <motion.div
+        aria-hidden="true"
+        className="fixed top-0 left-0 right-0 h-[3px] z-[100] origin-left bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 dark:from-amber-400 dark:via-orange-400 dark:to-rose-500 shadow-[0_0_12px_rgba(245,158,11,0.6)]"
+        style={{ scaleX: progress }}
         id="scroll-progress-indicator"
-      ></div>
+      />
 
-      {/* Splash Screen */}
+      {!reduce && (
+        <motion.div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-0 z-[5] hidden md:block"
+          style={{ background: spotlight }}
+          id="cursor-spotlight"
+        />
+      )}
+
       <AnimatePresence mode="wait">
         {showSplash && (
           <motion.div
             key="splash-screen"
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.5, ease: "easeInOut" }}
-            className="fixed inset-0 z-[9999] bg-[#0A0A0B] flex flex-col items-center justify-center p-6 text-white"
+            initial={{ y: 0 }}
+            exit={{ y: "-100%" }}
+            transition={{ duration: 0.8, ease: [0.76, 0, 0.24, 1] }}
+            className="fixed inset-0 z-[9999] bg-[#0A0A0B] flex flex-col items-center justify-center p-6 text-white overflow-hidden"
             id="app-splash-screen"
           >
-            {/* Ambient glowing fields */}
-            <div className="absolute inset-x-0 top-1/4 -translate-y-1/2 flex justify-center pointer-events-none">
-              <div className="w-[300px] h-[300px] rounded-full bg-amber-500/10 blur-[80px]"></div>
-            </div>
+            <div className="absolute inset-0 pointer-events-none opacity-70 bg-[linear-gradient(rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:44px_44px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_70%)]" />
+
+            <motion.div
+              aria-hidden="true"
+              animate={
+                reduce
+                  ? undefined
+                  : { scale: [1, 1.2, 1], opacity: [0.5, 0.9, 0.5] }
+              }
+              transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute w-[380px] h-[380px] rounded-full bg-amber-500/15 blur-[100px] pointer-events-none"
+            />
 
             <div className="relative flex flex-col items-center max-w-sm text-center">
-              {/* Monogram DA */}
               <motion.div
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ delay: 0.2, duration: 0.6, type: "spring" }}
-                className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white font-mono font-bold text-xl shadow-[0_0_30px_rgba(245,158,11,0.15)]"
+                initial={{ scale: 0.6, opacity: 0, rotate: -12 }}
+                animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                transition={{ delay: 0.15, duration: 0.7, type: "spring" }}
+                className="relative w-20 h-20"
                 id="splash-monogram"
               >
-                DA
+                <motion.div
+                  aria-hidden="true"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                  className="absolute inset-0 rounded-3xl bg-[conic-gradient(from_0deg,transparent_0%,transparent_55%,rgba(245,158,11,0.95)_100%)]"
+                />
+                <div className="absolute inset-[2px] rounded-[22px] bg-[#0A0A0B] flex items-center justify-center font-mono font-bold text-2xl text-white shadow-[0_0_40px_rgba(245,158,11,0.2)]">
+                  DA
+                </div>
               </motion.div>
 
-              {/* Designer Information */}
-              <motion.h1
-                initial={{ y: 15, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.4, duration: 0.5 }}
-                className="mt-6 font-sans text-xl md:text-2xl font-light tracking-tight text-white/90"
+              <h1
+                aria-label="Diva Alfahrizy"
+                className="mt-7 font-sans text-2xl md:text-3xl font-light tracking-tight text-white/90"
               >
-                Diva Alfahrizy
-              </motion.h1>
+                {"Diva Alfahrizy".split("").map((char, i) => (
+                  <motion.span
+                    key={i}
+                    initial={{ y: 24, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{
+                      delay: 0.5 + i * 0.04,
+                      duration: 0.5,
+                      ease: EASE,
+                    }}
+                    className="inline-block"
+                    aria-hidden="true"
+                  >
+                    {char === " " ? "\u00A0" : char}
+                  </motion.span>
+                ))}
+              </h1>
 
               <motion.p
                 initial={{ y: 15, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.6, duration: 0.5 }}
-                className="mt-1.5 font-mono text-[10px] text-amber-500/85 uppercase tracking-widest"
+                transition={{ delay: 1.1, duration: 0.5 }}
+                className="mt-2 font-mono text-[10px] text-amber-500/85 uppercase tracking-[0.3em]"
               >
                 {lang === "en"
                   ? "Technical Architect Portfolio"
                   : "Portofolio Arsitek Teknis"}
               </motion.p>
 
-              {/* Progress animation line */}
-              <div className="mt-10 w-48 h-[2px] bg-white/10 rounded-full overflow-hidden relative">
+              <div className="mt-10 w-56 h-[2px] bg-white/10 rounded-full overflow-hidden relative">
                 <motion.div
                   initial={{ width: "0%" }}
                   animate={{ width: "100%" }}
                   transition={{ duration: 1.8, ease: "easeInOut" }}
-                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full"
-                ></motion.div>
+                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full shadow-[0_0_12px_rgba(245,158,11,0.8)]"
+                />
               </div>
 
-              <motion.span
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 0.6 }}
-                transition={{ delay: 0.8, duration: 0.3 }}
-                className="mt-3.5 font-mono text-[9px] text-white/50 tracking-wider"
-              >
-                {lang === "en"
-                  ? "INITIALIZING SYSTEM..."
-                  : "MEMPERSIAPKAN SISTEM..."}
-              </motion.span>
+              <div className="mt-3.5 w-56 flex items-center justify-between font-mono text-[9px] text-white/50 tracking-wider">
+                <motion.span
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 0.7 }}
+                  transition={{ delay: 0.8, duration: 0.3 }}
+                >
+                  {lang === "en"
+                    ? "INITIALIZING SYSTEM..."
+                    : "MEMPERSIAPKAN SISTEM..."}
+                </motion.span>
+                <span className="tabular-nums text-amber-400/90">
+                  <motion.span>{splashText}</motion.span>%
+                </span>
+              </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Dynamic Header Navbar */}
-      <header
-        className={`fixed top-0 inset-x-0 bg-white/85 dark:bg-[#0A0A0B]/85 backdrop-blur-md border-b border-neutral-200/50 dark:border-white/5 z-40 transition-all duration-300 ${visible ? "translate-y-0" : "-translate-y-full"}`}
+      <motion.header
+        initial={{ y: -100, opacity: 0 }}
+        animate={{ y: visible ? 0 : -120, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 260, damping: 28 }}
+        className="fixed top-3 inset-x-0 z-40 px-3 md:px-6"
         id="main-navigation-header"
       >
         <div
-          className="max-w-7xl mx-auto px-6 md:px-8 h-20 flex items-center justify-between"
+          className={`max-w-6xl mx-auto h-16 px-4 md:px-5 flex items-center justify-between rounded-2xl border backdrop-blur-xl transition-all duration-300 ${
+            scrolled
+              ? "bg-white/80 dark:bg-[#0A0A0B]/80 border-neutral-200/70 dark:border-white/10 shadow-lg shadow-black/5 dark:shadow-black/40"
+              : "bg-white/40 dark:bg-[#0A0A0B]/40 border-transparent"
+          }`}
           id="navbar-container"
         >
-          {/* Brand/Signature */}
           <button
             onClick={() => scrollToSection("hero-section")}
-            className="flex items-center gap-2.5 font-bold text-lg text-neutral-900 dark:text-white cursor-pointer group"
+            className="flex items-center gap-2.5 font-bold text-lg text-neutral-900 dark:text-white cursor-pointer group rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
+            aria-label="Diva Alfahrizy - Home"
             id="nav-logo"
           >
             <div
-              className="w-8 h-8 rounded-lg bg-neutral-900 dark:bg-white/5 border dark:border-white/15 flex items-center justify-center text-white dark:text-white font-mono font-bold group-hover:rotate-6 transition-transform text-xs"
+              className="w-9 h-9 rounded-xl bg-neutral-900 dark:bg-white/5 border dark:border-white/15 flex items-center justify-center text-white font-mono font-bold text-xs transition-all duration-300 group-hover:rotate-6 group-hover:scale-105 group-hover:shadow-[0_0_20px_rgba(245,158,11,0.35)]"
               id="logo-icon"
             >
               DA
@@ -351,178 +568,186 @@ export default function App() {
             </div>
           </button>
 
-          {/* Desktop Navigation Links */}
           <nav
-            className="hidden lg:flex items-center gap-8 text-xs font-mono tracking-wider uppercase font-medium"
+            className="hidden lg:flex items-center gap-1 text-xs font-mono tracking-wider uppercase font-medium"
+            aria-label="Primary"
             id="desktop-links"
           >
-            <button
-              onClick={() => scrollToSection("about-section")}
-              className="text-neutral-500 hover:text-neutral-900 dark:text-white/40 dark:hover:text-white transition-colors cursor-pointer"
-            >
-              {dict.nav.about}
-            </button>
-            <button
-              onClick={() => scrollToSection("tech-skills-anchor")}
-              className="text-neutral-400 hover:text-neutral-900 dark:text-white/40 dark:hover:text-white transition-colors cursor-pointer"
-            >
-              {dict.nav.skills}
-            </button>
-            <button
-              onClick={() => scrollToSection("experience-section")}
-              className="text-neutral-500 hover:text-neutral-900 dark:text-white/40 dark:hover:text-white transition-colors cursor-pointer"
-            >
-              {dict.nav.experience}
-            </button>
-            <button
-              onClick={() => scrollToSection("projects-section")}
-              className="text-neutral-500 hover:text-neutral-900 dark:text-white/40 dark:hover:text-white transition-colors cursor-pointer"
-            >
-              {dict.nav.projects}
-            </button>
-            <button
-              onClick={() => scrollToSection("contact-section")}
-              className="text-neutral-500 hover:text-neutral-900 dark:text-white/40 dark:hover:text-white transition-colors cursor-pointer"
-            >
-              {dict.nav.contact}
-            </button>
+            {navItems.map((item) => {
+              const active = activeSection === item.observe;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => scrollToSection(item.target)}
+                  aria-current={active ? "true" : undefined}
+                  className={`relative px-3.5 py-2 rounded-xl cursor-pointer transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 ${
+                    active
+                      ? "text-neutral-900 dark:text-white"
+                      : "text-neutral-500 hover:text-neutral-900 dark:text-white/40 dark:hover:text-white"
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="nav-active-pill"
+                      className="absolute inset-0 rounded-xl bg-neutral-900/5 dark:bg-white/10 border border-neutral-900/5 dark:border-white/10"
+                      transition={{
+                        type: "spring",
+                        stiffness: 380,
+                        damping: 30,
+                      }}
+                    >
+                      <span className="absolute left-1/2 bottom-1 -translate-x-1/2 w-1 h-1 rounded-full bg-amber-500" />
+                    </motion.span>
+                  )}
+                  <span className="relative">{dict.nav[item.key]}</span>
+                </button>
+              );
+            })}
           </nav>
 
-          {/* Configuration Utilities (Language & Theme switches) */}
           <div
-            className="hidden lg:flex items-center gap-35"
+            className="hidden lg:flex items-center gap-2"
             id="utility-switches"
           >
-            {/* Bilingual toggle button (ID|EN) */}
-            <button
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.94 }}
               onClick={toggleLanguage}
-              className="p-2 px-3 rounded-lg hover:bg-neutral-50 dark:hover:bg-white/5 text-neutral-500 dark:text-white/40 font-mono text-xs transition-all cursor-pointer flex items-center gap-1.5 border border-neutral-200 dark:border-white/10"
+              className="p-2 px-3 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 text-neutral-500 dark:text-white/50 font-mono text-xs transition-colors cursor-pointer flex items-center gap-1.5 border border-neutral-200 dark:border-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
               title={lang === "en" ? "Ganti Bahasa" : "Switch Language"}
+              aria-label={lang === "en" ? "Ganti Bahasa" : "Switch Language"}
               id="lang-toggler-btn"
             >
               <Globe className="w-3.5 h-3.5" />
-              <span>{lang === "en" ? "EN" : "ID"}</span>
-            </button>
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={lang}
+                  initial={{ y: 8, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: -8, opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  {lang === "en" ? "EN" : "ID"}
+                </motion.span>
+              </AnimatePresence>
+            </motion.button>
 
-            {/* Dark Mode toggle */}
-            <button
+            <motion.button
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
               onClick={toggleTheme}
-              className="p-2 px-2.5 rounded-lg hover:bg-neutral-50 dark:hover:bg-white/5 text-neutral-500 dark:text-white/40 transition-all cursor-pointer border border-neutral-200 dark:border-white/10"
+              className="p-2 px-2.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 text-neutral-500 dark:text-white/50 transition-colors cursor-pointer border border-neutral-200 dark:border-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
               title={
+                theme === "light"
+                  ? "Activate dark theme"
+                  : "Activate light theme"
+              }
+              aria-label={
                 theme === "light"
                   ? "Activate dark theme"
                   : "Activate light theme"
               }
               id="theme-toggler-btn"
             >
-              {theme === "light" ? (
-                <Moon className="w-4 h-4" />
-              ) : (
-                <Sun className="w-4 h-4 text-amber-400" />
-              )}
-            </button>
+              <ThemeIcon theme={theme} />
+            </motion.button>
           </div>
 
-          {/* Mobile Right Controls Menu Toggle */}
           <div
-            className="flex lg:hidden items-center gap-2"
+            className="flex lg:hidden items-center gap-1"
             id="mobile-controls-row"
           >
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-xl text-neutral-600 dark:text-neutral-400"
+              className="p-2.5 rounded-xl text-neutral-600 dark:text-neutral-400 cursor-pointer"
+              aria-label="Toggle theme"
               id="mobile-theme-toggler-btn"
             >
-              {theme === "light" ? (
-                <Moon className="w-4.5 h-4.5" />
-              ) : (
-                <Sun className="w-4.5 h-4.5 text-amber-400" />
-              )}
+              <ThemeIcon theme={theme} className="w-[18px] h-[18px]" />
             </button>
             <button
               onClick={toggleLanguage}
-              className="p-2 font-mono text-xs font-bold text-neutral-600 dark:text-neutral-400"
+              className="p-2.5 font-mono text-xs font-bold text-neutral-600 dark:text-neutral-400 cursor-pointer"
+              aria-label={lang === "en" ? "Ganti Bahasa" : "Switch Language"}
               id="mobile-lang-toggler-btn"
             >
               {lang === "en" ? "EN" : "ID"}
             </button>
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-xl text-neutral-700 dark:text-gray-200"
+              className="p-2.5 rounded-xl text-neutral-700 dark:text-gray-200 cursor-pointer"
+              aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={mobileMenuOpen}
               id="mobile-hamburger-btn"
             >
-              {mobileMenuOpen ? (
-                <X className="w-6 h-6" />
-              ) : (
-                <Menu className="w-6 h-6" />
-              )}
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={mobileMenuOpen ? "close" : "open"}
+                  initial={{ rotate: -90, opacity: 0 }}
+                  animate={{ rotate: 0, opacity: 1 }}
+                  exit={{ rotate: 90, opacity: 0 }}
+                  transition={{ duration: 0.18 }}
+                  className="flex"
+                >
+                  {mobileMenuOpen ? (
+                    <X className="w-6 h-6" />
+                  ) : (
+                    <Menu className="w-6 h-6" />
+                  )}
+                </motion.span>
+              </AnimatePresence>
             </button>
           </div>
         </div>
-      </header>
+      </motion.header>
 
-      {/* Mobile Drawer Dropdown Menu */}
       <AnimatePresence>
         {mobileMenuOpen && (
           <>
-            {/* Smooth backdrop overlay with blur */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3, ease: "easeInOut" }}
-              className="fixed inset-0 top-20 bg-neutral-950/20 dark:bg-black/40 backdrop-blur-md z-30 lg:hidden cursor-pointer"
+              className="fixed inset-0 bg-neutral-950/30 dark:bg-black/50 backdrop-blur-md z-30 lg:hidden cursor-pointer"
               onClick={() => setMobileMenuOpen(false)}
               id="mobile-drawer-overlay"
             />
 
-            {/* Elevated mobile menu container with layout animation */}
             <motion.div
-              initial={{ opacity: 0, y: -15 }}
-              animate={{ opacity: 1, y: 0 }}
+              variants={menuContainer}
+              initial="hidden"
+              animate="show"
               exit={{ opacity: 0, y: -15 }}
-              transition={{ type: "spring", stiffness: 350, damping: 28 }}
-              className="fixed inset-x-0 top-20 bg-white/95 dark:bg-[#111113]/95 border-b border-neutral-200 dark:border-white/5 z-35 shadow-2xl lg:hidden flex flex-col p-6 space-y-4"
+              className="fixed inset-x-3 top-[84px] bg-white/95 dark:bg-[#111113]/95 backdrop-blur-xl border border-neutral-200 dark:border-white/10 rounded-2xl z-[35] shadow-2xl lg:hidden flex flex-col p-3"
               id="mobile-drawer-menu"
             >
-              <button
-                onClick={() => scrollToSection("about-section")}
-                className="text-left py-2 font-medium text-neutral-600 dark:text-white/75 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer text-sm font-sans"
-              >
-                {dict.nav.about}
-              </button>
-              <button
-                onClick={() => scrollToSection("tech-skills-anchor")}
-                className="text-left py-2 font-medium text-neutral-600 dark:text-white/75 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer text-sm font-sans"
-              >
-                {dict.nav.skills}
-              </button>
-              <button
-                onClick={() => scrollToSection("experience-section")}
-                className="text-left py-2 font-medium text-neutral-600 dark:text-white/75 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer text-sm font-sans"
-              >
-                {dict.nav.experience}
-              </button>
-              <button
-                onClick={() => scrollToSection("projects-section")}
-                className="text-left py-2 font-medium text-neutral-600 dark:text-white/75 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer text-sm font-sans"
-              >
-                {dict.nav.projects}
-              </button>
-              <button
-                onClick={() => scrollToSection("contact-section")}
-                className="text-left py-2 font-medium text-neutral-600 dark:text-white/75 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer text-sm font-sans"
-              >
-                {dict.nav.contact}
-              </button>
+              {navItems.map((item, index) => {
+                const active = activeSection === item.observe;
+                return (
+                  <motion.button
+                    key={item.key}
+                    variants={menuItem}
+                    onClick={() => scrollToSection(item.target)}
+                    className={`flex items-center gap-4 text-left px-4 py-3.5 rounded-xl font-medium transition-colors cursor-pointer text-sm font-sans ${
+                      active
+                        ? "bg-amber-500/10 text-neutral-900 dark:text-white"
+                        : "text-neutral-600 dark:text-white/75 hover:bg-neutral-100 dark:hover:bg-white/5 hover:text-neutral-900 dark:hover:text-white"
+                    }`}
+                  >
+                    <span className="font-mono text-[10px] text-amber-500/80 tabular-nums">
+                      0{index + 1}
+                    </span>
+                    <span>{dict.nav[item.key]}</span>
+                  </motion.button>
+                );
+              })}
             </motion.div>
           </>
         )}
       </AnimatePresence>
 
-      {/* Main Sections Core Layout */}
       <main id="portfolio-main-layout">
-        {/* Hero Landing */}
         <Hero
           lang={lang}
           dict={dict}
@@ -530,31 +755,27 @@ export default function App() {
           scrollToProjects={() => scrollToSection("projects-section")}
         />
 
-        {/* Owner Introduction About Section */}
-        <AboutSection lang={lang} dict={dict} />
+        <Reveal>
+          <AboutSection lang={lang} dict={dict} />
+        </Reveal>
 
-        {/* Anchor point for skills */}
-        <div id="tech-skills-anchor" className="scroll-mt-24"></div>
+        <div id="tech-skills-anchor" className="scroll-mt-28"></div>
 
-        {/* Tech skills marquee */}
         <section
-          className="py-12 bg-white dark:bg-neutral-950"
+          className="py-14 bg-white dark:bg-neutral-950"
           id="skills-section"
         >
-          <div className="max-w-7xl mx-auto px-6 md:px-8 mb-8">
-            <div className="text-center">
-              <h2 className="text-2xl font-bold text-neutral-900 dark:text-white">
-                {dict.skills.title}
-              </h2>
-              <p className="text-neutral-500 dark:text-neutral-400 text-xs mt-1 font-mono uppercase tracking-widest">
-                {dict.skills.subtitle}
-              </p>
+          <Reveal>
+            <div className="max-w-7xl mx-auto px-6 md:px-8 mb-10">
+              <SectionTitle
+                title={dict.skills.title}
+                subtitle={dict.skills.subtitle}
+              />
             </div>
-          </div>
-          <SkillsCarousel lang={lang} />
+            <SkillsCarousel lang={lang} />
+          </Reveal>
         </section>
 
-        {/* Subtle, animated horizontal divider with aesthetic visual accents */}
         <div
           className="relative max-w-5xl mx-auto px-6 py-6 md:py-10 flex items-center justify-center overflow-hidden"
           id="skills-experience-divider"
@@ -566,10 +787,9 @@ export default function App() {
             <div className="w-full border-t border-neutral-200/60 dark:border-white/5"></div>
           </div>
           <div className="relative flex justify-center">
-            {/* Ambient glowing core with decorative markers */}
             <motion.div
               initial={{ width: 0, opacity: 0 }}
-              whileInView={{ width: "120px", opacity: 1 }}
+              whileInView={{ width: "160px", opacity: 1 }}
               viewport={{ once: true, margin: "-50px" }}
               transition={{ duration: 1.2, ease: "easeOut" }}
               className="h-[2px] bg-gradient-to-r from-transparent via-amber-500/80 to-transparent absolute -top-[1px]"
@@ -578,8 +798,8 @@ export default function App() {
               initial={{ scale: 0.8, opacity: 0, y: 5 }}
               whileInView={{ scale: 1, opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-50px" }}
-              transition={{ duration: 0.8, ease: "easeOut", delay: 0.15 }}
-              className="bg-white dark:bg-[#0A0A0B] border border-neutral-200 dark:border-white/10 px-3.5 py-1 rounded-full flex items-center gap-2 shadow-sm transition-colors duration-150"
+              transition={{ duration: 0.8, ease: EASE, delay: 0.15 }}
+              className="bg-white dark:bg-[#0A0A0B] border border-neutral-200 dark:border-white/10 px-4 py-1.5 rounded-full flex items-center gap-2 shadow-sm transition-colors duration-150"
             >
               <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
               <span className="text-[9px] font-mono tracking-widest text-neutral-400 dark:text-white/35 uppercase">
@@ -590,44 +810,61 @@ export default function App() {
           </div>
         </div>
 
-        {/* Structured Experience list timeline */}
-        <ExperienceTimeline lang={lang} dict={dict} />
+        <Reveal>
+          <ExperienceTimeline lang={lang} dict={dict} />
+        </Reveal>
 
-        {/* Project grid selection */}
         <ProjectGallery lang={lang} dict={dict} />
 
-        {/* Operational execution stats dashboard below the project section */}
-        <StatsDashboard lang={lang} dict={dict} />
+        <Reveal>
+          <StatsDashboard lang={lang} dict={dict} />
+        </Reveal>
 
-        {/* Testimonials Marquee Section */}
         <section
           className="py-16 bg-neutral-50/50 dark:bg-neutral-950/20 border-t border-neutral-200/50 dark:border-white/5 scroll-mt-24"
           id="testimonials-section"
         >
-          <div className="max-w-7xl mx-auto px-6 md:px-8 mb-10">
-            <div className="text-center">
-              <h2 className="text-2xl font-bold text-neutral-900 dark:text-white tracking-tight">
-                {dict.testimonials?.title}
-              </h2>
-              <p className="text-neutral-500 dark:text-neutral-400 text-xs mt-1.5 font-mono uppercase tracking-widest max-w-lg mx-auto">
-                {dict.testimonials?.subtitle}
-              </p>
+          <Reveal>
+            <div className="max-w-7xl mx-auto px-6 md:px-8 mb-10">
+              <SectionTitle
+                title={dict.testimonials?.title}
+                subtitle={dict.testimonials?.subtitle}
+              />
             </div>
-          </div>
-          <TestimonialsMarquee lang={lang} />
+            <TestimonialsMarquee lang={lang} />
+          </Reveal>
         </section>
 
-        {/* Secure validated contact center */}
-        <ContactForm lang={lang} dict={dict} />
+        <Reveal>
+          <ContactForm lang={lang} dict={dict} />
+        </Reveal>
       </main>
 
-      {/* Footer Branding section */}
       <footer
-        className="bg-neutral-50 dark:bg-[#0A0A0B] border-t border-neutral-200 dark:border-white/5 py-16 transition-colors duration-300"
+        className="relative bg-neutral-50 dark:bg-[#0A0A0B] border-t border-neutral-200 dark:border-white/5 py-16 transition-colors duration-300 overflow-hidden"
         id="portfolio-standard-footer"
       >
-        <div
-          className="max-w-7xl mx-auto px-6 md:px-8 flex flex-col md:flex-row items-center justify-between gap-8"
+        <motion.div
+          aria-hidden="true"
+          initial={{ scaleX: 0, opacity: 0 }}
+          whileInView={{ scaleX: 1, opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 1.2, ease: EASE }}
+          className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-amber-500/70 to-transparent origin-center"
+        />
+        <motion.div
+          aria-hidden="true"
+          animate={reduce ? undefined : { opacity: [0.4, 0.8, 0.4] }}
+          transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+          className="pointer-events-none absolute -bottom-32 left-1/2 -translate-x-1/2 w-[520px] h-[220px] rounded-full bg-amber-500/10 blur-[90px]"
+        />
+
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-40px" }}
+          transition={{ duration: 0.8, ease: EASE }}
+          className="relative max-w-7xl mx-auto px-6 md:px-8 flex flex-col md:flex-row items-center justify-between gap-8"
           id="footer-container"
         >
           <div
@@ -635,7 +872,7 @@ export default function App() {
             id="footer-branding-block"
           >
             <div className="flex items-center justify-center md:justify-start gap-2 text-neutral-900 dark:text-white font-bold">
-              <Terminal className="w-4 h-4 text-neutral-400 dark:text-white/40" />
+              <Terminal className="w-4 h-4 text-amber-500" />
               <span className="font-sans leading-none tracking-tight">
                 Muhammad Diva Alfahrizy
               </span>
@@ -645,7 +882,6 @@ export default function App() {
             </p>
           </div>
 
-          {/* Social Badges and details */}
           <div
             className="flex flex-col items-center md:items-end gap-4"
             id="footer-links-block"
@@ -654,55 +890,44 @@ export default function App() {
               className="flex flex-wrap items-center justify-center md:justify-end gap-3.5"
               id="footer-social-logos"
             >
-              {/* Premium Interactive Resume Download Action Button */}
               <motion.a
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.98 }}
+                whileHover={{ scale: 1.05, y: -2 }}
+                whileTap={{ scale: 0.97 }}
                 href="/diva_alfahrizy_resume.pdf"
                 download="Diva_Alfahrizy_Resume.pdf"
-                className="inline-flex items-center gap-2 px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 dark:bg-amber-500/10 dark:hover:bg-amber-500/20 text-white dark:text-amber-400 border border-amber-500 dark:border-amber-400/20 text-xs font-mono tracking-wide transition-all shadow-xs cursor-pointer"
+                className="group relative overflow-hidden inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 dark:bg-amber-500/10 dark:hover:bg-amber-500/20 text-white dark:text-amber-400 border border-amber-500 dark:border-amber-400/20 text-xs font-mono tracking-wide transition-colors shadow-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
                 title={
                   lang === "en" ? "Download PDF Resume" : "Unduh Resume PDF"
                 }
                 id="footer-resume-download-btn"
               >
-                <FileDown className="w-3.5 h-3.5" />
-                <span>{dict.footer.downloadResume}</span>
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-y-0 -left-full w-1/2 -skew-x-12 bg-white/30 dark:bg-amber-300/20 transition-transform duration-700 group-hover:translate-x-[400%]"
+                />
+                <FileDown className="relative w-3.5 h-3.5 transition-transform group-hover:translate-y-0.5" />
+                <span className="relative">{dict.footer.downloadResume}</span>
               </motion.a>
 
               <span className="w-[1px] h-4 bg-neutral-200 dark:bg-white/10 self-center hidden sm:inline-block"></span>
 
-              <motion.a
-                whileHover={{ scale: 1.15, y: -2 }}
-                whileTap={{ scale: 0.95 }}
-                href="https://github.com/Al-Fay"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-2 rounded-lg bg-white dark:bg-white/5 border border-neutral-200 dark:border-white/10 text-neutral-550 dark:text-white/40 hover:text-neutral-900 dark:hover:text-white transition-all shadow-xs cursor-pointer"
-                id="social-github-link"
-              >
-                <Github className="w-4 h-4" />
-              </motion.a>
-              <motion.a
-                whileHover={{ scale: 1.15, y: -2 }}
-                whileTap={{ scale: 0.95 }}
-                href="https://www.linkedin.com/in/muhammad-diva-alfahrizy-1422ba208/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-2 rounded-lg bg-white dark:bg-white/5 border border-neutral-200 dark:border-white/10 text-neutral-550 dark:text-white/40 hover:text-neutral-950 dark:hover:text-blue-400 transition-all shadow-xs cursor-pointer"
-                id="social-linkedin-link"
-              >
-                <Linkedin className="w-4 h-4" />
-              </motion.a>
-              <motion.a
-                whileHover={{ scale: 1.15, y: -2 }}
-                whileTap={{ scale: 0.95 }}
-                href="mailto:divaalfahrizy02878@gmail.com"
-                className="p-2 rounded-lg bg-white dark:bg-white/5 border border-neutral-200 dark:border-white/10 text-neutral-550 dark:text-white/40 hover:text-neutral-950 dark:hover:text-amber-500 transition-all shadow-xs cursor-pointer"
-                id="social-email-link"
-              >
-                <Mail className="w-4 h-4" />
-              </motion.a>
+              {socials.map(({ id, href, label, Icon, hover, external }) => (
+                <motion.a
+                  key={id}
+                  whileHover={{ scale: 1.15, y: -3 }}
+                  whileTap={{ scale: 0.92 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 18 }}
+                  href={href}
+                  {...(external
+                    ? { target: "_blank", rel: "noopener noreferrer" }
+                    : {})}
+                  aria-label={label}
+                  className={`p-2.5 rounded-xl bg-white dark:bg-white/5 border border-neutral-200 dark:border-white/10 text-neutral-500 dark:text-white/40 ${hover} hover:border-amber-500/40 hover:shadow-[0_0_18px_rgba(245,158,11,0.18)] transition-colors shadow-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60`}
+                  id={id}
+                >
+                  <Icon className="w-4 h-4" />
+                </motion.a>
+              ))}
             </div>
             <p
               className="text-neutral-400 dark:text-white/30 text-[10px] font-mono tracking-wider whitespace-nowrap"
@@ -711,59 +936,75 @@ export default function App() {
               © {new Date().getFullYear()} Diva Alfahrizy. {dict.footer.rights}
             </p>
           </div>
-        </div>
+        </motion.div>
       </footer>
 
-      {/* Scroll to Top Button */}
       <AnimatePresence>
         {showScrollTop && (
           <motion.button
             key="scroll-to-top"
             onClick={scrollToTop}
-            initial={{ opacity: 0, scale: 0.8, y: 10 }}
+            initial={{ opacity: 0, scale: 0.6, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.8, y: 10 }}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="fixed bottom-24 right-8 z-45 p-3 bg-white dark:bg-[#111113] text-neutral-600 dark:text-white/70 hover:text-neutral-900 dark:hover:text-white border border-neutral-300 dark:border-white/10 rounded-xl shadow-lg hover:bg-neutral-50 dark:hover:bg-white/5 transition-all duration-200 active:scale-95 cursor-pointer flex items-center justify-center"
+            exit={{ opacity: 0, scale: 0.6, y: 16 }}
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.92 }}
+            transition={{ type: "spring", stiffness: 320, damping: 22 }}
+            className="fixed bottom-24 right-8 z-[45] w-12 h-12 bg-white dark:bg-[#111113] text-neutral-600 dark:text-white/70 hover:text-neutral-900 dark:hover:text-white rounded-full shadow-lg cursor-pointer flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
             title={lang === "en" ? "Back to Top" : "Kembali ke Atas"}
+            aria-label={lang === "en" ? "Back to Top" : "Kembali ke Atas"}
             id="scroll-to-top-btn"
           >
-            <ArrowUp className="w-4 h-4" />
+            <svg
+              className="absolute inset-0 -rotate-90"
+              viewBox="0 0 48 48"
+              aria-hidden="true"
+            >
+              <circle
+                cx="24"
+                cy="24"
+                r="22"
+                fill="none"
+                strokeWidth="2"
+                className="stroke-neutral-200 dark:stroke-white/10"
+              />
+              <motion.circle
+                cx="24"
+                cy="24"
+                r="22"
+                fill="none"
+                strokeWidth="2"
+                strokeLinecap="round"
+                className="stroke-amber-500"
+                style={{ pathLength: progress }}
+              />
+            </svg>
+            <ArrowUp className="relative w-4 h-4" />
           </motion.button>
         )}
       </AnimatePresence>
 
-      {/* Dynamic Gemini AI Assistant */}
       <AIAssistant lang={lang} />
 
-      {/* Floating Theme Switcher (Bottom-Left) */}
       <motion.button
         key="floating-theme-switcher"
         onClick={toggleTheme}
         initial={{ opacity: 0, scale: 0.8 }}
         animate={{ opacity: 1, scale: 1 }}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        className="fixed bottom-8 left-8 z-40 p-3 bg-white dark:bg-[#111113] text-neutral-600 dark:text-white/70 hover:text-neutral-900 dark:hover:text-white border border-neutral-300 dark:border-white/15 rounded-xl shadow-md hover:bg-neutral-50 dark:hover:bg-white/5 transition-all duration-200 cursor-pointer flex items-center justify-center"
+        whileHover={{ scale: 1.08, rotate: 8 }}
+        whileTap={{ scale: 0.92 }}
+        className="fixed bottom-8 left-8 z-40 p-3 bg-white dark:bg-[#111113] text-neutral-600 dark:text-white/70 hover:text-neutral-900 dark:hover:text-white border border-neutral-300 dark:border-white/15 rounded-xl shadow-md hover:shadow-[0_0_20px_rgba(245,158,11,0.2)] transition-shadow duration-200 cursor-pointer flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
         title={
+          theme === "light" ? "Activate dark theme" : "Activate light theme"
+        }
+        aria-label={
           theme === "light" ? "Activate dark theme" : "Activate light theme"
         }
         id="floating-theme-toggle-btn"
       >
-        <motion.div
-          animate={{ rotate: theme === "dark" ? 180 : 0 }}
-          transition={{ type: "spring", stiffness: 200, damping: 15 }}
-        >
-          {theme === "light" ? (
-            <Moon className="w-4 h-4" />
-          ) : (
-            <Sun className="w-4 h-4 text-amber-500 dark:text-amber-400" />
-          )}
-        </motion.div>
+        <ThemeIcon theme={theme} />
       </motion.button>
 
-      {/* Premium Swipe Theme Transition Overlay */}
       <AnimatePresence>
         {activeTransitionTheme && (
           <motion.div

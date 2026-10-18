@@ -23,9 +23,21 @@ interface Message {
   timestamp: Date;
 }
 
+const greeting = (lang: Language): Message[] => [
+  {
+    id: "initial",
+    role: "model",
+    content:
+      lang === "id"
+        ? "Halo! Saya **Copilot Alfay**, asisten portofolio Diva Alfahrizy. Tanyakan apa saja tentang proyek, pengalaman kerja, keahlian teknis Diva, atau bagaimana cara memulai proyek bersama Diva!"
+        : "Hi there! I'm **Alfay Copilot**, Diva Alfahrizy's portfolio assistant. Ask me anything about Diva's projects, work experience, core tech stack, or how to start a project together!",
+    timestamp: new Date(),
+  },
+];
+
 export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => greeting(lang));
   const [inputMessage, setInputMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -33,13 +45,13 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  // Suggestions depending on language
+  // Judul proyek harus sama persis dengan data.ts agar dijawab sebagai detail proyek.
   const suggestions =
     lang === "id"
       ? [
           "Keahlian teknis Diva apa saja?",
           "Apakah Diva menerima kerja remote?",
-          "Ceritakan tentang Portal Pembayaran SPP Virtual Account",
+          "Ceritakan tentang Portal Pembayaran SPP Sekolah Virtual Account",
           "Bagaimana cara menghubungi Diva?",
         ]
       : [
@@ -49,31 +61,17 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
           "How can I hire Diva?",
         ];
 
-  // Load initial greeting
+  // Ganti sapaan saat bahasa berubah.
   useEffect(() => {
-    const greetingText =
-      lang === "id"
-        ? "Halo! Saya **Copilot Alfay**, asisten AI personalnya Diva Alfahrizy. Tanyakan apa saja tentang proyek, pengalaman kerja, keahlian teknis Diva, atau bagaimana cara memulai proyek bersama Diva!"
-        : "Hi there! I'm **Alfay Copilot**, Diva Alfahrizy personal AI agent. Ask me anything about her projects, work achievements, core tech stack, or how to start a project with Diva!";
-
-    setMessages([
-      {
-        id: "initial",
-        role: "model",
-        content: greetingText,
-        timestamp: new Date(),
-      },
-    ]);
+    setMessages(greeting(lang));
   }, [lang]);
 
-  // Handle auto-scroll to bottom of messages
+  // Auto-scroll ke pesan terbaru.
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
-  // Simple formatting markdown parser inside component
+  // Parser markdown sederhana: **bold** dan `code`.
   const formatInline = (
     text: string,
     isUser: boolean = false,
@@ -83,7 +81,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
 
     let parts: React.ReactNode[] = [text];
 
-    // 1. Process Bold
+    // 1. Bold
     let match;
     let resultParts: React.ReactNode[] = [];
 
@@ -122,7 +120,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
     parts = resultParts;
     resultParts = [];
 
-    // 2. Process Inline Code
+    // 2. Inline code
     for (const part of parts) {
       if (typeof part !== "string") {
         resultParts.push(part);
@@ -167,7 +165,6 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
 
     const lines = text.split("\n");
     return lines.map((line, lineIdx) => {
-      // Check for headings
       if (line.trim().startsWith("### ")) {
         return (
           <h4
@@ -198,9 +195,11 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
         );
       }
 
-      // Check for bullet items
+      // Bullet: "- ", "* ", atau "• " (dipakai answer.ts)
       const isBullet =
-        line.trim().startsWith("- ") || line.trim().startsWith("* ");
+        line.trim().startsWith("- ") ||
+        line.trim().startsWith("* ") ||
+        line.trim().startsWith("• ");
       if (isBullet) {
         const bulletText = line.trim().substring(2);
         return (
@@ -215,7 +214,6 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
         );
       }
 
-      // Check for numbered items
       const isNumbered = /^\d+\.\s/.test(line.trim());
       if (isNumbered) {
         const numText = line.trim().replace(/^\d+\.\s/, "");
@@ -231,7 +229,6 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
         );
       }
 
-      // Filter out raw markdown backticks line
       if (line.trim().startsWith("```")) {
         return null;
       }
@@ -249,7 +246,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
     });
   };
 
-  // Submit dynamic message to API
+  // Kirim pesan ke /api/portfolio-chat
   const handleSendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
 
@@ -266,20 +263,14 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
     setIsLoading(true);
 
     try {
-      // Send message along with history (up to last 15 messages)
       const payloadMessages = [...messages, userMessage]
         .slice(-15)
-        .map((m) => ({
-          role: m.role,
-          content: m.content,
-        }));
+        .map((m) => ({ role: m.role, content: m.content }));
 
       const res = await fetch("/api/portfolio-chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ messages: payloadMessages }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: payloadMessages, lang }),
       });
 
       if (!res.ok) {
@@ -298,33 +289,20 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
           timestamp: new Date(),
         },
       ]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       setErrorText(
         lang === "id"
-          ? "Gagal menghubungi asisten AI. Pastikan file server berjalan dan GEMINI_API_KEY sudah dikonfigurasi dengan benar di menu Secrets."
-          : "Could not contact the Copilot servant. Ensure the backend server is running and GEMINI_API_KEY is properly initialized in Secrets panel.",
+          ? "Gagal menghubungi asisten. Pastikan server berjalan (npm run dev)."
+          : "Could not reach the assistant. Make sure the server is running (npm run dev).",
       );
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Clear Chat history
   const handleResetChat = () => {
-    const greetingText =
-      lang === "id"
-        ? "Halo! Saya **Copilot Alfay**, asisten AI personalnya Diva Alfahrizy. Tanyakan apa saja tentang proyek, pengalaman kerja, keahlian teknis Diva, atau bagaimana cara memulai proyek bersama Diva!"
-        : "Hi there! I'm **Alfay Copilot**, Diva Alfahrizy personal AI agent. Ask me anything about her projects, work achievements, core tech stack, or how to start a project with Diva!";
-
-    setMessages([
-      {
-        id: "initial",
-        role: "model",
-        content: greetingText,
-        timestamp: new Date(),
-      },
-    ]);
+    setMessages(greeting(lang));
     setErrorText(null);
   };
 
@@ -360,13 +338,14 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
                     Alfay Copilot
                   </h3>
                   <p className="text-[9px] font-mono text-neutral-400 dark:text-white/30 uppercase tracking-widest leading-none mt-0.5">
-                    Powered by Gemini AI
+                    {lang === "id"
+                      ? "Asisten Portofolio"
+                      : "Portfolio Assistant"}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-1">
-                {/* Reset button */}
                 <button
                   onClick={handleResetChat}
                   className="p-1.5 rounded-lg text-neutral-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-all cursor-pointer"
@@ -376,7 +355,6 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
-                {/* Close Button */}
                 <button
                   onClick={() => setIsOpen(false)}
                   className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-white hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-all cursor-pointer"
@@ -409,7 +387,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
                 </div>
               ))}
 
-              {/* Suggestions inside scroll body if thread is empty or just has greeting */}
+              {/* Saran pertanyaan saat percakapan baru dimulai */}
               {messages.length <= 1 && (
                 <div className="pt-4 space-y-2">
                   <p className="text-[10px] font-mono text-neutral-400 uppercase tracking-widest flex items-center gap-1">
@@ -434,27 +412,22 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
                 </div>
               )}
 
-              {/* Waiting Indicator */}
+              {/* Indikator loading */}
               {isLoading && (
                 <div className="flex justify-start">
                   <div className="bg-neutral-100 dark:bg-white/5 border border-neutral-200/50 dark:border-white/5 rounded-2xl rounded-tl-xs px-4 py-3 flex items-center gap-1 shadow-3xs">
-                    <span
-                      className="w-1.5 h-1.5 bg-neutral-400 dark:bg-white/40 rounded-full animate-bounce"
-                      style={{ animationDelay: "0ms" }}
-                    ></span>
-                    <span
-                      className="w-1.5 h-1.5 bg-neutral-400 dark:bg-white/40 rounded-full animate-bounce"
-                      style={{ animationDelay: "150ms" }}
-                    ></span>
-                    <span
-                      className="w-1.5 h-1.5 bg-neutral-400 dark:bg-white/40 rounded-full animate-bounce"
-                      style={{ animationDelay: "300ms" }}
-                    ></span>
+                    {[0, 150, 300].map((d) => (
+                      <span
+                        key={d}
+                        className="w-1.5 h-1.5 bg-neutral-400 dark:bg-white/40 rounded-full animate-bounce"
+                        style={{ animationDelay: `${d}ms` }}
+                      ></span>
+                    ))}
                   </div>
                 </div>
               )}
 
-              {/* Error Warning Box */}
+              {/* Error */}
               {errorText && (
                 <div
                   className="flex gap-2.5 p-3.5 rounded-xl border border-red-500/20 bg-red-500/5 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs items-start"
@@ -468,7 +441,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input Form Area */}
+            {/* Input */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -499,7 +472,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ lang }) => {
         )}
       </AnimatePresence>
 
-      {/* FAB trigger button */}
+      {/* Tombol FAB */}
       <motion.button
         onClick={() => setIsOpen(!isOpen)}
         whileHover={{ scale: 1.05 }}

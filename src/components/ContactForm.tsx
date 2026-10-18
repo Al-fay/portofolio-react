@@ -1,13 +1,21 @@
 import React, { useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import {
+  motion,
+  AnimatePresence,
+  useAnimationControls,
+  useReducedMotion,
+} from "motion/react";
 import { Language, TranslationDict } from "../types";
 import {
   Send,
   CheckCircle2,
   AlertCircle,
-  Phone,
   Mail,
   MapPin,
+  ShieldCheck,
+  Copy,
+  Check,
+  Loader2,
 } from "lucide-react";
 
 interface ContactFormProps {
@@ -28,115 +36,382 @@ interface FormErrors {
   message?: string;
 }
 
-export const ContactForm: React.FC<ContactFormProps> = ({ lang, dict }) => {
-  const [form, setForm] = useState<FormState>({
-    name: "",
-    email: "",
-    company: "",
-    message: "",
-  });
+const EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
+const EMAIL_ADDRESS = "divaalfahrizy02878@gmail.com";
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbx56DQXzbcWRCd34h_CjiBNGIKKuA1XH1B99VsJth6iWrT7v_-F6PnyaM46pVJb29kN/exec";
+const EMPTY_FORM: FormState = { name: "", email: "", company: "", message: "" };
 
+const CARD =
+  "group relative overflow-hidden rounded-2xl border border-neutral-200/70 bg-white/90 shadow-sm backdrop-blur-sm dark:border-white/10 dark:bg-[#111113]/90";
+const LABEL =
+  "block text-[10px] font-mono uppercase tracking-widest text-neutral-500 dark:text-white/50";
+
+const moveSpot = (e: React.MouseEvent<HTMLElement>) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  e.currentTarget.style.setProperty("--mx", `${e.clientX - r.left}px`);
+  e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
+};
+
+const SpotOverlay: React.FC = () => (
+  <span
+    aria-hidden="true"
+    className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+    style={{
+      background:
+        "radial-gradient(300px circle at var(--mx, 50%) var(--my, 50%), rgba(245,158,11,0.12), transparent 70%)",
+    }}
+  />
+);
+
+interface FieldProps {
+  id: string;
+  name: keyof FormState;
+  label: string;
+  value: string;
+  placeholder: string;
+  disabled: boolean;
+  touched: boolean;
+  error?: string;
+  required?: boolean;
+  optionalText?: string;
+  requiredText?: string;
+  invalidText?: string;
+  completeText: string;
+  type?: string;
+  multiline?: boolean;
+  onChange: (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => void;
+  onBlur: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
+}
+
+const Field: React.FC<FieldProps> = ({
+  id,
+  name,
+  label,
+  value,
+  placeholder,
+  disabled,
+  touched,
+  error,
+  required,
+  optionalText,
+  requiredText,
+  invalidText,
+  completeText,
+  type = "text",
+  multiline,
+  onChange,
+  onBlur,
+}) => {
+  const hasError = touched && !!error;
+  const isValid = touched && !error && (required || value.trim().length > 0);
+  const errorId = `${id}-error`;
+
+  const stateClass = hasError
+    ? "border-red-500/60 focus:border-red-500 focus:ring-red-500/20"
+    : isValid
+      ? "border-emerald-500/50 focus:border-emerald-500/80 focus:ring-emerald-500/20"
+      : "border-neutral-200 dark:border-white/10 focus:border-amber-500/60 focus:ring-amber-500/20";
+
+  const inputClass = `w-full rounded-xl border bg-white/60 py-3 pl-4 pr-11 font-sans text-base font-light text-neutral-800 placeholder-neutral-400 transition-all duration-200 focus:outline-none focus:ring-4 disabled:opacity-60 dark:bg-white/[0.02] dark:text-white dark:placeholder-white/25 md:text-sm ${stateClass} ${
+    multiline ? "resize-none" : ""
+  }`;
+
+  const statusText = hasError
+    ? error === undefined
+      ? ""
+      : name === "email" && value.trim()
+        ? invalidText
+        : requiredText
+    : isValid
+      ? completeText
+      : "";
+
+  const common = {
+    id,
+    name,
+    value,
+    onChange,
+    onBlur,
+    placeholder,
+    disabled,
+    "aria-invalid": hasError,
+    "aria-describedby": hasError ? errorId : undefined,
+    "aria-required": required,
+    className: inputClass,
+  };
+
+  return (
+    <div id={`fg-${name}`}>
+      <div className="mb-2 flex items-center justify-between">
+        <label htmlFor={id} className={LABEL}>
+          {label}
+          {required && (
+            <span
+              aria-hidden="true"
+              className="ml-1 text-amber-600 dark:text-amber-400"
+            >
+              *
+            </span>
+          )}
+        </label>
+        <AnimatePresence mode="wait" initial={false}>
+          {optionalText && !touched ? (
+            <motion.span
+              key="optional"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="text-[9px] font-mono uppercase tracking-wider text-neutral-400 dark:text-white/35"
+            >
+              {optionalText}
+            </motion.span>
+          ) : statusText ? (
+            <motion.span
+              key={statusText}
+              initial={{ opacity: 0, x: 6 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 6 }}
+              className={`text-[9px] font-mono uppercase tracking-wider ${
+                hasError
+                  ? "text-red-600 dark:text-red-400"
+                  : "text-emerald-600 dark:text-emerald-400"
+              }`}
+            >
+              {statusText}
+            </motion.span>
+          ) : null}
+        </AnimatePresence>
+      </div>
+
+      <div className="relative">
+        {multiline ? (
+          <textarea {...common} rows={4} />
+        ) : (
+          <input {...common} type={type} />
+        )}
+        <div
+          className={`pointer-events-none absolute right-3.5 flex items-center ${
+            multiline ? "top-3.5" : "top-1/2 -translate-y-1/2"
+          }`}
+          aria-hidden="true"
+        >
+          <AnimatePresence mode="wait" initial={false}>
+            {hasError && (
+              <motion.span
+                key="err"
+                initial={{ opacity: 0, scale: 0.5, rotate: -20 }}
+                animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                exit={{ opacity: 0, scale: 0.5 }}
+                className="text-red-500"
+              >
+                <AlertCircle className="h-4 w-4" />
+              </motion.span>
+            )}
+            {isValid && (
+              <motion.span
+                key="ok"
+                initial={{ opacity: 0, scale: 0.5, rotate: 20 }}
+                animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                exit={{ opacity: 0, scale: 0.5 }}
+                className="text-emerald-500"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      <div className="mt-1.5 min-h-[1.1rem]">
+        <AnimatePresence>
+          {hasError && (
+            <motion.div
+              key="msg"
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.2 }}
+              role="alert"
+              id={errorId}
+              className="flex items-center gap-1.5 text-[11px] font-mono text-red-600 dark:text-red-400"
+            >
+              <AlertCircle className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <span>{error}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+};
+
+const SuccessBurst: React.FC<{ reduce: boolean | null }> = ({ reduce }) => (
+  <div
+    className="relative flex h-20 w-20 items-center justify-center"
+    id="success-icon-wrapper"
+  >
+    {!reduce &&
+      Array.from({ length: 10 }).map((_, i) => {
+        const angle = (i / 10) * Math.PI * 2;
+        return (
+          <motion.span
+            key={i}
+            aria-hidden="true"
+            initial={{ x: 0, y: 0, opacity: 1, scale: 1 }}
+            animate={{
+              x: Math.cos(angle) * 56,
+              y: Math.sin(angle) * 56,
+              opacity: 0,
+              scale: 0.3,
+            }}
+            transition={{ duration: 0.9, delay: 0.25, ease: "easeOut" }}
+            className={`absolute h-1.5 w-1.5 rounded-full ${
+              i % 2 === 0 ? "bg-emerald-400" : "bg-amber-400"
+            }`}
+          />
+        );
+      })}
+    <motion.span
+      aria-hidden="true"
+      initial={reduce ? false : { scale: 0.6, opacity: 0.8 }}
+      animate={reduce ? undefined : { scale: 1.8, opacity: 0 }}
+      transition={{ duration: 1, ease: "easeOut" }}
+      className="absolute inset-0 rounded-full border-2 border-emerald-500/60"
+    />
+    <motion.div
+      initial={reduce ? false : { scale: 0 }}
+      animate={{ scale: 1 }}
+      transition={{ type: "spring", stiffness: 260, damping: 16 }}
+      className="relative flex h-16 w-16 items-center justify-center rounded-full border border-emerald-500/40 bg-emerald-500/10"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        className="h-8 w-8"
+        fill="none"
+        aria-hidden="true"
+      >
+        <motion.path
+          d="M5 12.5l4.5 4.5L19 7.5"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="text-emerald-500"
+          initial={reduce ? false : { pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 0.5, delay: 0.25, ease: "easeOut" }}
+        />
+      </svg>
+    </motion.div>
+  </div>
+);
+
+export const ContactForm: React.FC<ContactFormProps> = ({ lang, dict }) => {
+  const reduce = useReducedMotion();
+  const shake = useAnimationControls();
+
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [isSending, setIsSending] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [submitError, setSubmitError] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const t = {
+    required: lang === "en" ? "Required" : "Wajib diisi",
+    invalid: lang === "en" ? "Invalid" : "Tidak valid",
+    complete: lang === "en" ? "Complete" : "Lengkap",
+    optional: lang === "id" ? "Opsional" : "Optional",
+    channels: lang === "en" ? "Direct Channels" : "Saluran Langsung",
+    copy: lang === "en" ? "Copy email" : "Salin email",
+    copiedText: lang === "en" ? "Copied" : "Tersalin",
+    sendFail:
+      lang === "en"
+        ? "Message could not be sent. Please try again or email me directly."
+        : "Pesan gagal dikirim. Coba lagi atau kirim langsung lewat email.",
+    ndaTitle: "NDAs & IP Protection",
+    ndaBody:
+      lang === "en"
+        ? "All initial communications and code consultations are protected under mutual non-disclosure agreements. Intellectual property is fully assigned upon milestones."
+        : "Seluruh komunikasi awal dan konsultasi kode dilindungi oleh klausul kerahasiaan bersama. Hak Kekayaan Intelektual dialihkan penuh setelah milestone selesai.",
+    another: lang === "en" ? "Transmit Another Inquiry" : "Kirim Pesan Lainnya",
+  };
+
+  const getFieldError = (name: string, value: string): string | undefined => {
+    if (name === "name" || name === "message") {
+      return value.trim() ? undefined : dict.contact.errorRequired;
+    }
+    if (name === "email") {
+      if (!value.trim()) return dict.contact.errorRequired;
+      return EMAIL_REGEX.test(value) ? undefined : dict.contact.errorEmail;
+    }
+    return undefined;
+  };
 
   const validate = (): boolean => {
-    const tempErrors: FormErrors = {};
-    let isValid = true;
+    const next: FormErrors = {
+      name: getFieldError("name", form.name),
+      email: getFieldError("email", form.email),
+      message: getFieldError("message", form.message),
+    };
 
-    // Trigger touched for all inputs on final attempt
-    setTouched({
-      name: true,
-      email: true,
-      company: true,
-      message: true,
-    });
+    setTouched({ name: true, email: true, company: true, message: true });
+    setErrors(next);
 
-    if (!form.name.trim()) {
-      tempErrors.name = dict.contact.errorRequired;
-      isValid = false;
-    }
-
-    if (!form.email.trim()) {
-      tempErrors.email = dict.contact.errorRequired;
-      isValid = false;
-    } else {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(form.email)) {
-        tempErrors.email = dict.contact.errorEmail;
-        isValid = false;
+    const firstInvalid = (["name", "email", "message"] as const).find(
+      (key) => next[key],
+    );
+    if (firstInvalid) {
+      if (!reduce) {
+        shake.start({
+          x: [0, -8, 8, -5, 5, 0],
+          transition: { duration: 0.4 },
+        });
       }
+      document.getElementById(`input-${firstInvalid}`)?.focus();
+      return false;
     }
-
-    if (!form.message.trim()) {
-      tempErrors.message = dict.contact.errorRequired;
-      isValid = false;
-    }
-
-    setErrors(tempErrors);
-    return isValid;
+    return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
+    setSubmitError(false);
     setIsSending(true);
 
-    const url =
-      "https://script.google.com/macros/s/AKfycbx56DQXzbcWRCd34h_CjiBNGIKKuA1XH1B99VsJth6iWrT7v_-F6PnyaM46pVJb29kN/exec";
     const formData = new FormData();
-
     formData.append("name", form.name);
     formData.append("email", form.email);
     formData.append("company", form.company);
     formData.append("message", form.message);
 
-    // Simulate reliable API processing (Express endpoint / Supabase proxy flow state simulator)
-    const response = await fetch(url, {
-      method: "POST",
-      body: formData,
-    });
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: "POST",
+        body: formData,
+      });
+      const result = (await response.text()).trim();
 
-    const result = await response.text();
+      if (result !== "success") {
+        throw new Error("Gagal mengirim");
+      }
 
-    if (result !== "success") {
-      throw new Error("Gagal mengirim");
-    }
-
-    if (result === "success") {
       setIsSuccess(true);
+      setForm(EMPTY_FORM);
+      setTouched({});
+      setErrors({});
+    } catch {
+      setSubmitError(true);
+    } finally {
+      setIsSending(false);
     }
-
-    setIsSending(false);
-    setForm({ name: "", email: "", company: "", message: "" });
-    setTouched({});
-  };
-
-  const validateField = (name: string, value: string) => {
-    let error: string | undefined = undefined;
-
-    if (name === "name") {
-      if (!value.trim()) {
-        error = dict.contact.errorRequired;
-      }
-    } else if (name === "email") {
-      if (!value.trim()) {
-        error = dict.contact.errorRequired;
-      } else {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(value)) {
-          error = dict.contact.errorEmail;
-        }
-      }
-    } else if (name === "message") {
-      if (!value.trim()) {
-        error = dict.contact.errorRequired;
-      }
-    }
-
-    setErrors((prev) => ({ ...prev, [name]: error }));
   };
 
   const handleInputChange = (
@@ -144,10 +419,9 @@ export const ContactForm: React.FC<ContactFormProps> = ({ lang, dict }) => {
   ) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
-
-    // Validate instantly if the field has already been touched
+    if (submitError) setSubmitError(false);
     if (touched[name]) {
-      validateField(name, value);
+      setErrors((prev) => ({ ...prev, [name]: getFieldError(name, value) }));
     }
   };
 
@@ -156,35 +430,96 @@ export const ContactForm: React.FC<ContactFormProps> = ({ lang, dict }) => {
   ) => {
     const { name, value } = e.target;
     setTouched((prev) => ({ ...prev, [name]: true }));
-    validateField(name, value);
+    setErrors((prev) => ({ ...prev, [name]: getFieldError(name, value) }));
+  };
+
+  const copyEmail = async () => {
+    try {
+      await navigator.clipboard.writeText(EMAIL_ADDRESS);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  const fieldProps = {
+    disabled: isSending,
+    completeText: t.complete,
+    requiredText: t.required,
+    invalidText: t.invalid,
+    onChange: handleInputChange,
+    onBlur: handleBlur,
   };
 
   return (
     <section
-      className="py-24 bg-neutral-50 dark:bg-[#0A0A0B] border-t border-neutral-100 dark:border-white/5 transition-colors duration-300"
+      className="relative overflow-hidden border-t border-neutral-100 bg-neutral-50 py-24 transition-colors duration-300 scroll-mt-24 dark:border-white/5 dark:bg-[#0A0A0B]"
       id="contact-section"
     >
-      <div className="max-w-7xl mx-auto px-6 md:px-8" id="contact-wrapper">
-        {/* Section Header */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.04)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)] dark:bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)]"
+      />
+      <motion.div
+        aria-hidden="true"
+        animate={
+          reduce
+            ? undefined
+            : { x: [0, 40, 0], y: [0, 24, 0], opacity: [0.45, 0.85, 0.45] }
+        }
+        transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
+        className="pointer-events-none absolute -top-20 right-1/4 h-72 w-72 rounded-full bg-amber-500/15 blur-[90px]"
+      />
+      <motion.div
+        aria-hidden="true"
+        animate={
+          reduce
+            ? undefined
+            : { x: [0, -40, 0], y: [0, -20, 0], opacity: [0.35, 0.7, 0.35] }
+        }
+        transition={{ duration: 17, repeat: Infinity, ease: "easeInOut" }}
+        className="pointer-events-none absolute -bottom-24 left-1/4 h-72 w-72 rounded-full bg-orange-500/10 blur-[90px]"
+      />
+
+      <div
+        className="relative mx-auto max-w-7xl px-6 md:px-8"
+        id="contact-wrapper"
+      >
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={reduce ? false : { opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-100px" }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-          className="text-center mb-16"
+          transition={{ duration: 0.8, ease: EASE }}
+          className="mb-16 text-center"
           id="contact-header"
         >
-          <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-500 dark:text-white/50 border border-neutral-200 dark:border-white/10 px-3.5 py-1 rounded-full">
+          <span className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white/70 px-3.5 py-1.5 text-[10px] font-mono uppercase tracking-wider text-neutral-600 backdrop-blur-sm dark:border-white/10 dark:bg-white/5 dark:text-white/60">
+            <span className="relative flex h-1.5 w-1.5" aria-hidden="true">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-60 animate-ping motion-reduce:animate-none" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-500" />
+            </span>
             {dict.nav.contact}
           </span>
           <h2
-            className="text-3xl md:text-4xl lg:text-5xl font-sans font-light text-neutral-900 dark:text-white mt-4 tracking-tight"
+            className="mt-5 font-sans text-3xl font-light tracking-tight text-neutral-900 dark:text-white md:text-4xl lg:text-5xl"
             id="contact-title"
           >
-            {dict.contact.title}
+            <motion.span
+              animate={
+                reduce
+                  ? undefined
+                  : { backgroundPosition: ["0% 50%", "100% 50%", "0% 50%"] }
+              }
+              transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+              style={{ backgroundSize: "200% 200%" }}
+              className="bg-gradient-to-r from-neutral-900 via-amber-600 to-neutral-900 bg-clip-text text-transparent dark:from-white dark:via-amber-400 dark:to-white"
+            >
+              {dict.contact.title}
+            </motion.span>
           </h2>
           <p
-            className="text-neutral-500 dark:text-white/40 mt-3 font-sans max-w-2xl mx-auto font-light text-sm italic"
+            className="mx-auto mt-4 max-w-2xl font-sans text-sm font-light italic text-neutral-500 dark:text-white/45"
             id="contact-subtitle"
           >
             {dict.contact.subtitle}
@@ -192,56 +527,98 @@ export const ContactForm: React.FC<ContactFormProps> = ({ lang, dict }) => {
         </motion.div>
 
         <div
-          className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start"
+          className="grid grid-cols-1 items-start gap-10 lg:grid-cols-12 lg:gap-12"
           id="contact-inner-grid"
         >
-          {/* Info Panels column (Left) */}
           <motion.div
-            initial={{ opacity: 0, x: -20 }}
+            initial={reduce ? false : { opacity: 0, x: -24 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true, margin: "-100px" }}
-            transition={{ duration: 0.7, ease: "easeOut", delay: 0.1 }}
-            className="lg:col-span-5 space-y-6"
+            transition={{ duration: 0.7, ease: EASE, delay: 0.1 }}
+            className="space-y-6 lg:col-span-5"
             id="contact-info-col"
           >
             <div
-              className="bg-white dark:bg-[#111113] p-8 rounded-2xl border border-neutral-200/60 dark:border-white/5 shadow-2xs"
+              className={`${CARD} p-8`}
               id="info-card-main"
+              onMouseMove={moveSpot}
             >
-              <h3 className="text-xs font-mono uppercase tracking-widest text-neutral-400 dark:text-white/40 mb-8">
-                {lang === "en" ? "Direct Channels" : "Saluran Langsung"}
+              <SpotOverlay />
+              <span
+                aria-hidden="true"
+                className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-500/60 to-transparent"
+              />
+              <h3 className="relative mb-8 text-xs font-mono uppercase tracking-widest text-neutral-500 dark:text-white/45">
+                {t.channels}
               </h3>
 
-              <div className="space-y-8" id="info-channel-items">
+              <div className="relative space-y-8" id="info-channel-items">
                 <div className="flex items-start gap-4" id="channel-email">
-                  <div className="p-2.5 bg-neutral-50 dark:bg-white/5 border border-neutral-200/60 dark:border-white/5 rounded-xl text-neutral-600 dark:text-white/60 shrink-0">
-                    <Mail className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-[9px] font-mono uppercase tracking-widest text-neutral-400 dark:text-white/30">
+                  <motion.div
+                    whileHover={reduce ? undefined : { rotate: 8, scale: 1.1 }}
+                    className="shrink-0 rounded-xl border border-amber-500/20 bg-amber-500/10 p-2.5 text-amber-700 dark:text-amber-400"
+                  >
+                    <Mail className="h-4 w-4" aria-hidden="true" />
+                  </motion.div>
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-[9px] font-mono uppercase tracking-widest text-neutral-500 dark:text-white/40">
                       Email Address
                     </h4>
-                    <p className="font-sans font-medium text-neutral-850 dark:text-white text-sm mt-1">
-                      divaalfahrizy02878@gmail.com
-                    </p>
-                    <span className="text-[11px] font-sans text-neutral-400 dark:text-white/30 block mt-0.5 font-light">
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <a
+                        href={`mailto:${EMAIL_ADDRESS}`}
+                        className="break-all font-sans text-sm font-medium text-neutral-900 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:text-white"
+                      >
+                        {EMAIL_ADDRESS}
+                      </a>
+                      <button
+                        type="button"
+                        onClick={copyEmail}
+                        className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-neutral-200 px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-neutral-500 transition-colors hover:border-amber-500/40 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-white/10 dark:text-white/50 dark:hover:text-white"
+                        aria-label={t.copy}
+                      >
+                        <AnimatePresence mode="wait" initial={false}>
+                          <motion.span
+                            key={copied ? "done" : "idle"}
+                            initial={{ opacity: 0, scale: 0.6 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.6 }}
+                            transition={{ duration: 0.15 }}
+                            className="flex"
+                          >
+                            {copied ? (
+                              <Check className="h-3 w-3 text-emerald-500" />
+                            ) : (
+                              <Copy className="h-3 w-3" />
+                            )}
+                          </motion.span>
+                        </AnimatePresence>
+                        <span aria-live="polite">
+                          {copied ? t.copiedText : t.copy}
+                        </span>
+                      </button>
+                    </div>
+                    <span className="mt-1 block font-sans text-[11px] font-light text-neutral-500 dark:text-white/40">
                       Typical response under 12 hours.
                     </span>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-4" id="channel-location">
-                  <div className="p-2.5 bg-neutral-50 dark:bg-white/5 border border-neutral-200/60 dark:border-white/5 rounded-xl text-neutral-600 dark:text-white/60 shrink-0">
-                    <MapPin className="w-4 h-4" />
-                  </div>
+                  <motion.div
+                    whileHover={reduce ? undefined : { rotate: -8, scale: 1.1 }}
+                    className="shrink-0 rounded-xl border border-amber-500/20 bg-amber-500/10 p-2.5 text-amber-700 dark:text-amber-400"
+                  >
+                    <MapPin className="h-4 w-4" aria-hidden="true" />
+                  </motion.div>
                   <div>
-                    <h4 className="text-[9px] font-mono uppercase tracking-widest text-neutral-400 dark:text-white/30">
+                    <h4 className="text-[9px] font-mono uppercase tracking-widest text-neutral-500 dark:text-white/40">
                       Operating base
                     </h4>
-                    <p className="font-sans font-medium text-neutral-850 dark:text-white text-sm mt-1">
+                    <p className="mt-1 font-sans text-sm font-medium text-neutral-900 dark:text-white">
                       Pekalongan, Indonesia
                     </p>
-                    <span className="text-[11px] font-sans text-neutral-400 dark:text-white/30 block mt-0.5 font-light">
+                    <span className="mt-0.5 block font-sans text-[11px] font-light text-neutral-500 dark:text-white/40">
                       Providing technical leadership from SEA timezone.
                     </span>
                   </div>
@@ -249,383 +626,161 @@ export const ContactForm: React.FC<ContactFormProps> = ({ lang, dict }) => {
               </div>
             </div>
 
-            {/* Micro FAQ panel for trust */}
             <div
-              className="bg-white dark:bg-[#111113] p-6 rounded-2xl border border-neutral-200/60 dark:border-white/5 shadow-2xs"
+              className={`${CARD} p-6`}
               id="contact-faq-panel"
+              onMouseMove={moveSpot}
             >
-              <h4 className="font-medium text-neutral-900 dark:text-white text-xs mb-2 uppercase tracking-wide font-mono">
-                🔒 NDAs & IP Protection
+              <SpotOverlay />
+              <h4 className="relative mb-2 flex items-center gap-2 font-mono text-xs font-medium uppercase tracking-wide text-neutral-900 dark:text-white">
+                <ShieldCheck
+                  className="h-4 w-4 text-emerald-600 dark:text-emerald-400"
+                  aria-hidden="true"
+                />
+                {t.ndaTitle}
               </h4>
-              <p className="text-neutral-500 dark:text-white/40 text-xs leading-relaxed font-sans font-light">
-                {lang === "en"
-                  ? "All initial communications and code consultations are protected under mutual non-disclosure agreements. Intellectual property is fully assigned upon milestones."
-                  : "Seluruh komunikasi awal dan konsultasi kode dilindungi oleh klausul kerahasiaan bersama. Hak Kekayaan Intelektual dialihkan penuh setelah milestone selesai."}
+              <p className="relative font-sans text-xs font-light leading-relaxed text-neutral-600 dark:text-white/50">
+                {t.ndaBody}
               </p>
             </div>
           </motion.div>
 
-          {/* Form Interactive Container Column (Right) */}
           <motion.div
-            initial={{ opacity: 0, x: 20 }}
+            initial={reduce ? false : { opacity: 0, x: 24 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true, margin: "-100px" }}
-            transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
+            transition={{ duration: 0.7, ease: EASE, delay: 0.2 }}
             className="lg:col-span-7"
             id="contact-form-col"
           >
-            <div
-              className="bg-white dark:bg-[#111113] p-8 rounded-2xl border border-neutral-200/60 dark:border-white/5 shadow-2xs relative overflow-hidden"
-              id="form-card-main"
-            >
+            <div className={`${CARD} p-6 md:p-8`} id="form-card-main">
+              <span
+                aria-hidden="true"
+                className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-amber-400 via-orange-500 to-amber-400"
+              />
               <AnimatePresence mode="wait">
                 {!isSuccess ? (
                   <motion.form
                     key="contact-form-node"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
                     onSubmit={handleSubmit}
-                    className="space-y-6"
                     noValidate
                     id="communication-form"
                   >
-                    {/* Name Input */}
-                    <div id="fg-name">
-                      <div className="flex justify-between items-center mb-2">
-                        <label className="block text-[10px] font-mono uppercase tracking-widest text-neutral-400 dark:text-white/45">
-                          {dict.contact.name}{" "}
-                          <span className="text-neutral-400 dark:text-white/30">
-                            *
-                          </span>
-                        </label>
-                        <AnimatePresence>
-                          {touched.name && (
-                            <motion.span
-                              initial={{ opacity: 0, x: 5 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              exit={{ opacity: 0, x: 5 }}
-                              className={`text-[9px] font-mono uppercase tracking-wider ${
-                                errors.name
-                                  ? "text-red-500"
-                                  : "text-emerald-500"
-                              }`}
-                            >
-                              {errors.name
-                                ? lang === "en"
-                                  ? "Required"
-                                  : "Wajib diisi"
-                                : lang === "en"
-                                  ? "Complete ✓"
-                                  : "Lengkap ✓"}
-                            </motion.span>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          name="name"
-                          value={form.name}
-                          onChange={handleInputChange}
-                          onBlur={handleBlur}
-                          placeholder={dict.contact.placeholderName}
-                          disabled={isSending}
-                          className={`w-full pl-4 pr-11 py-3 rounded-xl border bg-transparent font-sans text-xs md:text-sm text-neutral-800 dark:text-white placeholder-neutral-400 dark:placeholder-white/20 focus:outline-none transition-all font-light ${
-                            touched.name
-                              ? errors.name
-                                ? "border-red-500/50 dark:border-red-500/30 bg-red-50/[0.01] dark:bg-red-500/[0.005] focus:border-red-500 focus:ring-1 focus:ring-red-500/10"
-                                : "border-emerald-500/50 dark:border-emerald-500/20 bg-emerald-50/[0.01] dark:bg-emerald-500/[0.005] focus:border-emerald-500/80 dark:focus:border-emerald-500/40 focus:ring-1 focus:ring-emerald-500/10"
-                              : "border-neutral-200 dark:border-white/10 focus:border-neutral-400 dark:focus:border-white/20"
-                          }`}
-                          id="input-name"
-                        />
-                        <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none">
-                          <AnimatePresence mode="wait">
-                            {touched.name &&
-                              (errors.name ? (
-                                <motion.div
-                                  key="name-error-icon"
-                                  initial={{ opacity: 0, scale: 0.8 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  exit={{ opacity: 0, scale: 0.8 }}
-                                  className="text-red-500"
-                                >
-                                  <AlertCircle className="w-4 h-4" />
-                                </motion.div>
-                              ) : (
-                                <motion.div
-                                  key="name-success-icon"
-                                  initial={{ opacity: 0, scale: 0.8 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  exit={{ opacity: 0, scale: 0.8 }}
-                                  className="text-emerald-500"
-                                >
-                                  <CheckCircle2 className="w-4 h-4" />
-                                </motion.div>
-                              ))}
-                          </AnimatePresence>
-                        </div>
-                      </div>
-                      <AnimatePresence>
-                        {touched.name && errors.name && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="flex items-center gap-1.5 mt-2 text-red-500 text-[10px] font-mono overflow-hidden"
-                            id="error-name"
-                          >
-                            <AlertCircle className="w-3 h-3 animate-pulse" />
-                            <span>{errors.name}</span>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-
-                    {/* Email Input */}
-                    <div id="fg-email">
-                      <div className="flex justify-between items-center mb-2">
-                        <label className="block text-[10px] font-mono uppercase tracking-widest text-neutral-400 dark:text-white/45">
-                          {dict.contact.email}{" "}
-                          <span className="text-neutral-400 dark:text-white/30">
-                            *
-                          </span>
-                        </label>
-                        <AnimatePresence>
-                          {touched.email && (
-                            <motion.span
-                              initial={{ opacity: 0, x: 5 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              exit={{ opacity: 0, x: 5 }}
-                              className={`text-[9px] font-mono uppercase tracking-wider ${
-                                errors.email
-                                  ? "text-red-500"
-                                  : "text-emerald-500"
-                              }`}
-                            >
-                              {errors.email
-                                ? lang === "en"
-                                  ? "Invalid"
-                                  : "Tidak valid"
-                                : lang === "en"
-                                  ? "Complete ✓"
-                                  : "Lengkap ✓"}
-                            </motion.span>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                      <div className="relative">
-                        <input
-                          type="email"
-                          name="email"
-                          value={form.email}
-                          onChange={handleInputChange}
-                          onBlur={handleBlur}
-                          placeholder={dict.contact.placeholderEmail}
-                          disabled={isSending}
-                          className={`w-full pl-4 pr-11 py-3 rounded-xl border bg-transparent font-sans text-xs md:text-sm text-neutral-800 dark:text-white placeholder-neutral-400 dark:placeholder-white/20 focus:outline-none transition-all font-light ${
-                            touched.email
-                              ? errors.email
-                                ? "border-red-500/50 dark:border-red-500/30 bg-red-50/[0.01] dark:bg-red-500/[0.005] focus:border-red-500 focus:ring-1 focus:ring-red-500/10"
-                                : "border-emerald-500/50 dark:border-emerald-500/20 bg-emerald-50/[0.01] dark:bg-emerald-500/[0.005] focus:border-emerald-500/80 dark:focus:border-emerald-500/40 focus:ring-1 focus:ring-emerald-500/10"
-                              : "border-neutral-200 dark:border-white/10 focus:border-neutral-400 dark:focus:border-white/20"
-                          }`}
-                          id="input-email"
-                        />
-                        <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none">
-                          <AnimatePresence mode="wait">
-                            {touched.email &&
-                              (errors.email ? (
-                                <motion.div
-                                  key="email-error-icon"
-                                  initial={{ opacity: 0, scale: 0.8 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  exit={{ opacity: 0, scale: 0.8 }}
-                                  className="text-red-500"
-                                >
-                                  <AlertCircle className="w-4 h-4" />
-                                </motion.div>
-                              ) : (
-                                <motion.div
-                                  key="email-success-icon"
-                                  initial={{ opacity: 0, scale: 0.8 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  exit={{ opacity: 0, scale: 0.8 }}
-                                  className="text-emerald-500"
-                                >
-                                  <CheckCircle2 className="w-4 h-4" />
-                                </motion.div>
-                              ))}
-                          </AnimatePresence>
-                        </div>
-                      </div>
-                      <AnimatePresence>
-                        {touched.email && errors.email && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="flex items-center gap-1.5 mt-2 text-red-500 text-[10px] font-mono overflow-hidden"
-                            id="error-email"
-                          >
-                            <AlertCircle className="w-3 h-3 animate-pulse" />
-                            <span>{errors.email}</span>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-
-                    {/* Company Input */}
-                    <div id="fg-company">
-                      <div className="flex justify-between items-center mb-2">
-                        <label className="block text-[10px] font-mono uppercase tracking-widest text-neutral-400 dark:text-white/45">
-                          {dict.contact.company}
-                        </label>
-                        <span className="text-[9px] font-mono uppercase tracking-wider text-neutral-400 dark:text-white/30 animate-pulse">
-                          {lang === "id" ? "Opsional" : "Optional"}
-                        </span>
-                      </div>
-                      <input
-                        type="text"
-                        name="company"
-                        value={form.company}
-                        onChange={handleInputChange}
-                        onBlur={handleBlur}
-                        placeholder={dict.contact.placeholderCompany}
-                        disabled={isSending}
-                        className={`w-full px-4 py-3 rounded-xl border bg-transparent font-sans text-xs md:text-sm text-neutral-800 dark:text-white placeholder-neutral-400 dark:placeholder-white/20 focus:outline-none transition-all font-light ${
-                          touched.company && form.company.trim().length > 0
-                            ? "border-emerald-500/40 dark:border-emerald-500/25 bg-emerald-50/[0.01] dark:bg-emerald-500/[0.005] focus:border-emerald-500/80 dark:focus:border-emerald-500/35 focus:ring-1 focus:ring-emerald-500/10"
-                            : "border-neutral-200 dark:border-white/10 focus:border-neutral-400 dark:focus:border-white/20"
-                        }`}
-                        id="input-company"
+                    <motion.div animate={shake} className="space-y-1">
+                      <Field
+                        id="input-name"
+                        name="name"
+                        label={dict.contact.name}
+                        value={form.name}
+                        placeholder={dict.contact.placeholderName}
+                        touched={!!touched.name}
+                        error={errors.name}
+                        required
+                        {...fieldProps}
                       />
-                    </div>
+                      <Field
+                        id="input-email"
+                        name="email"
+                        type="email"
+                        label={dict.contact.email}
+                        value={form.email}
+                        placeholder={dict.contact.placeholderEmail}
+                        touched={!!touched.email}
+                        error={errors.email}
+                        required
+                        {...fieldProps}
+                      />
+                      <Field
+                        id="input-company"
+                        name="company"
+                        label={dict.contact.company}
+                        value={form.company}
+                        placeholder={dict.contact.placeholderCompany}
+                        touched={!!touched.company}
+                        optionalText={t.optional}
+                        {...fieldProps}
+                      />
+                      <Field
+                        id="input-message"
+                        name="message"
+                        label={dict.contact.message}
+                        value={form.message}
+                        placeholder={dict.contact.placeholderMessage}
+                        touched={!!touched.message}
+                        error={errors.message}
+                        required
+                        multiline
+                        {...fieldProps}
+                      />
+                    </motion.div>
 
-                    {/* Message Textarea */}
-                    <div id="fg-message">
-                      <div className="flex justify-between items-center mb-2">
-                        <label className="block text-[10px] font-mono uppercase tracking-widest text-neutral-400 dark:text-white/45">
-                          {dict.contact.message}{" "}
-                          <span className="text-neutral-400 dark:text-white/30">
-                            *
-                          </span>
-                        </label>
-                        <AnimatePresence>
-                          {touched.message && (
-                            <motion.span
-                              initial={{ opacity: 0, x: 5 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              exit={{ opacity: 0, x: 5 }}
-                              className={`text-[9px] font-mono uppercase tracking-wider ${
-                                errors.message
-                                  ? "text-red-500"
-                                  : "text-emerald-500"
-                              }`}
-                            >
-                              {errors.message
-                                ? lang === "en"
-                                  ? "Required"
-                                  : "Wajib diisi"
-                                : lang === "en"
-                                  ? "Complete ✓"
-                                  : "Lengkap ✓"}
-                            </motion.span>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                      <div className="relative">
-                        <textarea
-                          name="message"
-                          value={form.message}
-                          onChange={handleInputChange}
-                          onBlur={handleBlur}
-                          placeholder={dict.contact.placeholderMessage}
-                          disabled={isSending}
-                          rows={4}
-                          className={`w-full pl-4 pr-11 py-3 rounded-xl border bg-transparent font-sans text-xs md:text-sm text-neutral-800 dark:text-white placeholder-neutral-400 dark:placeholder-white/20 focus:outline-none transition-all font-light resize-none ${
-                            touched.message
-                              ? errors.message
-                                ? "border-red-500/50 dark:border-red-500/30 bg-red-50/[0.01] dark:bg-red-500/[0.005] focus:border-red-500 focus:ring-1 focus:ring-red-500/10"
-                                : "border-emerald-500/50 dark:border-emerald-500/20 bg-emerald-50/[0.01] dark:bg-emerald-500/[0.005] focus:border-emerald-500/80 dark:focus:border-emerald-500/40 focus:ring-1 focus:ring-emerald-500/10"
-                              : "border-neutral-200 dark:border-white/10 focus:border-neutral-400 dark:focus:border-white/20"
-                          }`}
-                          id="input-message"
-                        ></textarea>
-                        <div className="absolute right-3.5 top-6 flex items-center gap-1.5 pointer-events-none">
-                          <AnimatePresence mode="wait">
-                            {touched.message &&
-                              (errors.message ? (
-                                <motion.div
-                                  key="msg-error-icon"
-                                  initial={{ opacity: 0, scale: 0.8 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  exit={{ opacity: 0, scale: 0.8 }}
-                                  className="text-red-500"
-                                >
-                                  <AlertCircle className="w-4 h-4" />
-                                </motion.div>
-                              ) : (
-                                <motion.div
-                                  key="msg-success-icon"
-                                  initial={{ opacity: 0, scale: 0.8 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  exit={{ opacity: 0, scale: 0.8 }}
-                                  className="text-emerald-500"
-                                >
-                                  <CheckCircle2 className="w-4 h-4" />
-                                </motion.div>
-                              ))}
-                          </AnimatePresence>
-                        </div>
-                      </div>
-                      <AnimatePresence>
-                        {touched.message && errors.message && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="flex items-center gap-1.5 mt-1 text-red-500 text-[10px] font-mono overflow-hidden"
-                            id="error-message"
-                          >
-                            <AlertCircle className="w-3 h-3 animate-pulse" />
-                            <span>{errors.message}</span>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
+                    <AnimatePresence>
+                      {submitError && (
+                        <motion.div
+                          key="submit-error"
+                          initial={{ opacity: 0, y: -6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -6 }}
+                          role="alert"
+                          className="mb-4 flex items-start gap-2.5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-700 dark:text-red-300"
+                          id="submit-error-banner"
+                        >
+                          <AlertCircle
+                            className="mt-0.5 h-4 w-4 shrink-0"
+                            aria-hidden="true"
+                          />
+                          <span>{t.sendFail}</span>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
 
-                    {/* Submit Button */}
-                    <button
+                    <motion.button
                       type="submit"
                       disabled={isSending}
-                      className="w-full py-3.5 rounded-xl text-white dark:text-neutral-950 bg-neutral-900 dark:bg-white font-medium flex items-center justify-center gap-2 hover:opacity-90 active:scale-99 disabled:opacity-50 transition-all shadow-sm cursor-pointer"
+                      whileHover={reduce || isSending ? undefined : { y: -2 }}
+                      whileTap={
+                        reduce || isSending ? undefined : { scale: 0.98 }
+                      }
+                      className="group/btn relative mt-2 flex w-full cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 py-3.5 font-medium text-neutral-950 shadow-lg shadow-amber-500/20 transition-shadow duration-200 hover:shadow-xl hover:shadow-amber-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-70 dark:focus-visible:ring-offset-[#111113]"
                       id="submit-contact-btn"
                     >
-                      <Send
-                        className={`w-3.5 h-3.5 ${isSending ? "animate-pulse" : ""}`}
+                      <span
+                        aria-hidden="true"
+                        className="absolute inset-y-0 -left-full w-1/2 -skew-x-12 bg-white/40 transition-transform duration-700 group-hover/btn:translate-x-[400%]"
                       />
-                      <span className="font-mono text-xs tracking-wider uppercase">
+                      {isSending ? (
+                        <Loader2
+                          className="relative h-4 w-4 animate-spin motion-reduce:animate-none"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <Send
+                          className="relative h-4 w-4 transition-transform duration-300 group-hover/btn:-translate-y-0.5 group-hover/btn:translate-x-1"
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span
+                        className="relative font-mono text-xs uppercase tracking-wider"
+                        aria-live="polite"
+                      >
                         {isSending ? dict.contact.sending : dict.contact.send}
                       </span>
-                    </button>
+                    </motion.button>
                   </motion.form>
                 ) : (
                   <motion.div
                     key="success-form-node"
-                    initial={{ opacity: 0, scale: 0.95 }}
+                    initial={reduce ? false : { opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ type: "spring", stiffness: 200, damping: 20 }}
-                    className="py-12 flex flex-col items-center text-center space-y-6"
+                    className="flex flex-col items-center space-y-6 py-12 text-center"
+                    role="status"
                     id="success-panel-form"
                   >
-                    <div
-                      className="w-14 h-14 rounded-full bg-transparent border border-emerald-500/40 flex items-center justify-center text-emerald-500 animate-bounce"
-                      id="success-icon-wrapper"
-                    >
-                      <CheckCircle2 className="w-6 h-6" />
-                    </div>
+                    <SuccessBurst reduce={reduce} />
                     <div className="space-y-2">
                       <h3
                         className="text-xl font-medium text-neutral-900 dark:text-white"
@@ -634,21 +789,22 @@ export const ContactForm: React.FC<ContactFormProps> = ({ lang, dict }) => {
                         {dict.contact.successTitle}
                       </h3>
                       <p
-                        className="text-neutral-500 dark:text-white/40 text-xs md:text-sm max-w-md font-sans leading-relaxed font-light"
+                        className="max-w-md font-sans text-sm font-light leading-relaxed text-neutral-600 dark:text-white/50"
                         id="success-body-text"
                       >
                         {dict.contact.successMessage}
                       </p>
                     </div>
-                    <button
+                    <motion.button
+                      type="button"
+                      whileHover={reduce ? undefined : { y: -2 }}
+                      whileTap={reduce ? undefined : { scale: 0.97 }}
                       onClick={() => setIsSuccess(false)}
-                      className="px-6 py-2.5 rounded-xl border border-neutral-200 dark:border-white/10 text-[10px] font-mono text-neutral-500 dark:text-white/50 hover:bg-neutral-50 dark:hover:bg-white/5 cursor-pointer uppercase tracking-wider"
+                      className="cursor-pointer rounded-xl border border-neutral-200 px-6 py-2.5 text-[10px] font-mono uppercase tracking-wider text-neutral-600 transition-colors hover:border-amber-500/40 hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-white/10 dark:text-white/60 dark:hover:bg-white/5"
                       id="reset-form-btn"
                     >
-                      {lang === "en"
-                        ? "Transmit Another Inquiry"
-                        : "Kirim Pesan Lainnya"}
-                    </button>
+                      {t.another}
+                    </motion.button>
                   </motion.div>
                 )}
               </AnimatePresence>

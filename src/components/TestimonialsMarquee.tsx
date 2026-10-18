@@ -1,88 +1,162 @@
-import React from 'react';
-import { motion } from 'motion/react';
-import { testimonialsList } from '../data';
-import { Language } from '../types';
-import { Quote } from 'lucide-react';
+import React, { useState } from "react";
+import { testimonialsList } from "../data";
+import { Language } from "../types";
+import { Quote, Pause, Play } from "lucide-react";
 
 interface TestimonialsMarqueeProps {
   lang: Language;
+  title?: string;
+  subtitle?: string;
 }
 
-export const TestimonialsMarquee: React.FC<TestimonialsMarqueeProps> = ({ lang }) => {
-  const scrollRef = React.useRef<HTMLDivElement>(null);
+const COPIES = 6;
 
-  // Duplicate the list multiple times to guarantee seamless scrolling
-  const duplicatedTestimonials = [
-    ...testimonialsList,
-    ...testimonialsList,
-    ...testimonialsList,
-    ...testimonialsList,
-  ];
+const getInitials = (name: string) =>
+  name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
 
-  const handleMouseEnter = () => {
-    if (scrollRef.current) {
-      const animations = scrollRef.current.getAnimations();
-      animations.forEach(anim => anim.pause());
-    }
-  };
+const MARQUEE_CSS = `
+@keyframes tm-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.tm-track {
+  animation: tm-scroll 70s linear infinite;
+  will-change: transform;
+}
+.tm-viewport:hover .tm-track,
+.tm-viewport:focus-within .tm-track,
+.tm-track[data-paused="true"] {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tm-track { animation-duration: 200s; }
+}
+`;
 
-  const handleMouseLeave = () => {
-    if (scrollRef.current) {
-      const animations = scrollRef.current.getAnimations();
-      animations.forEach(anim => anim.play());
-    }
-  };
+export const TestimonialsMarquee: React.FC<TestimonialsMarqueeProps> = ({
+  lang,
+  title,
+  subtitle,
+}) => {
+  const [paused, setPaused] = useState(false);
+
+  const items = Array.from({ length: COPIES }).flatMap((_, copy) =>
+    testimonialsList.map((item) => ({
+      ...item,
+      key: `${item.id}-${copy}`,
+      hidden: copy > 0,
+    })),
+  );
+
+  const regionLabel =
+    title ?? (lang === "id" ? "Testimoni klien" : "Client testimonials");
+  const toggleLabel = paused
+    ? lang === "id"
+      ? "Putar animasi testimoni"
+      : "Play testimonials animation"
+    : lang === "id"
+      ? "Jeda animasi testimoni"
+      : "Pause testimonials animation";
 
   return (
-    <div 
-      className="relative w-full overflow-hidden bg-neutral-50 dark:bg-[#0A0A0B] border-y border-neutral-200/50 dark:border-white/5 py-10" 
+    <section
       id="testimonials-marquee-wrapper"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      role="region"
+      aria-label={regionLabel}
+      className="relative overflow-hidden border-y border-neutral-200/60 bg-neutral-50 py-16 dark:border-white/5 dark:bg-[#0A0A0B] md:py-20"
     >
-      {/* Soft gradient masks for smooth fade-out look at the edges */}
-      <div className="absolute left-0 top-0 bottom-0 w-16 md:w-36 bg-gradient-to-r from-neutral-50 to-transparent dark:from-[#0A0A0B] z-10 pointer-events-none" id="testimonials-gradient-left"></div>
-      <div className="absolute right-0 top-0 bottom-0 w-16 md:w-36 bg-gradient-to-l from-neutral-50 to-transparent dark:from-[#0A0A0B] z-10 pointer-events-none" id="testimonials-gradient-right"></div>
+      <style>{MARQUEE_CSS}</style>
 
-      <div className="flex w-max" id="testimonials-inner-container">
-        <motion.div
-          ref={scrollRef}
-          className="flex gap-6 md:gap-8 pr-6 md:pr-8 items-stretch"
-          animate={{ x: [0, -1200] }}
-          transition={{
-            ease: "linear",
-            duration: 45,
-            repeat: Infinity,
-            repeatType: "loop"
-          }}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-[radial-gradient(50%_100%_at_50%_0%,rgba(245,158,11,0.10),transparent_70%)] dark:bg-[radial-gradient(50%_100%_at_50%_0%,rgba(245,158,11,0.07),transparent_70%)]"
+      />
+
+      {(title || subtitle) && (
+        <div className="relative mx-auto mb-10 max-w-2xl px-6 text-center md:mb-12">
+          {title && (
+            <h2 className="text-balance text-3xl font-semibold tracking-tight text-neutral-950 dark:text-white md:text-4xl">
+              {title}
+            </h2>
+          )}
+          {subtitle && (
+            <p className="mt-3 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400 md:text-base">
+              {subtitle}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="tm-viewport relative w-full overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]">
+        <div
+          className="tm-track flex w-max items-stretch py-2"
+          data-paused={paused}
           id="testimonials-scroll-motion"
         >
-          {duplicatedTestimonials.map((item, idx) => (
-            <div 
-              key={`${item.id}-${idx}`} 
-              className="flex flex-col justify-between w-[280px] sm:w-[350px] bg-white dark:bg-[#111113] p-5 md:p-6 rounded-2xl border border-neutral-200/60 dark:border-white/5 shadow-2xs hover:border-neutral-350 dark:hover:border-white/10 hover:scale-[1.03] hover:shadow-md dark:hover:shadow-black/40 transition-all duration-300 group cursor-default transform"
-              id={`testimonial-item-${idx}`}
+          {items.map((item) => (
+            <figure
+              key={item.key}
+              aria-hidden={item.hidden}
+              className="group relative mr-5 flex w-[300px] shrink-0 flex-col justify-between rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm transition-[border-color,box-shadow] duration-300 hover:border-amber-500/40 hover:shadow-lg hover:shadow-amber-500/5 dark:border-white/10 dark:bg-[#111113] dark:hover:border-amber-400/30 dark:hover:shadow-black/40 sm:mr-6 sm:w-[380px] sm:p-7"
             >
-              <div className="flex flex-col gap-3.5" id={`testimonial-content-${idx}`}>
-                <div className="flex items-center justify-between" id={`testimonial-header-${idx}`}>
-                  <div className="flex flex-col" id={`testimonial-author-${idx}`}>
-                    <span className="font-sans font-semibold text-neutral-800 dark:text-white text-xs sm:text-sm whitespace-nowrap">
-                      {item.name}
-                    </span>
-                    <span className="font-mono text-[9px] sm:text-[10px] text-neutral-400 dark:text-white/40 uppercase tracking-wider mt-0.5">
-                      {item.role}
-                    </span>
-                  </div>
-                  <Quote className="w-4 h-4 text-neutral-300 dark:text-white/10 group-hover:text-amber-500/30 transition-colors duration-300" />
-                </div>
-                <p className="text-neutral-600 dark:text-neutral-300 text-xs font-sans leading-relaxed italic" id={`testimonial-text-${idx}`}>
-                  "{item.text[lang]}"
-                </p>
-              </div>
-            </div>
+              <Quote
+                aria-hidden="true"
+                className="h-7 w-7 text-amber-500/70 transition-colors duration-300 group-hover:text-amber-500 dark:text-amber-400/60 dark:group-hover:text-amber-400"
+              />
+
+              <blockquote className="mt-4 flex-1 text-sm leading-relaxed text-neutral-700 dark:text-neutral-300">
+                {item.text[lang]}
+              </blockquote>
+
+              <figcaption className="mt-6 flex items-center gap-3 border-t border-neutral-200 pt-5 dark:border-white/10">
+                <span
+                  aria-hidden="true"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-xs font-bold text-white dark:text-neutral-950"
+                >
+                  {getInitials(item.name)}
+                </span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate text-sm font-semibold text-neutral-950 dark:text-white">
+                    {item.name}
+                  </span>
+                  <span className="truncate text-xs text-neutral-600 dark:text-neutral-400">
+                    {item.role}
+                  </span>
+                </span>
+              </figcaption>
+            </figure>
           ))}
-        </motion.div>
+        </div>
       </div>
-    </div>
+
+      <div className="relative mt-8 flex justify-center">
+        <button
+          type="button"
+          onClick={() => setPaused((p) => !p)}
+          aria-label={toggleLabel}
+          aria-pressed={paused}
+          className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 py-2 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-50 dark:border-white/10 dark:bg-white/5 dark:text-neutral-200 dark:hover:border-white/20 dark:hover:bg-white/10 dark:focus-visible:ring-offset-[#0A0A0B]"
+        >
+          {paused ? (
+            <Play className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <Pause className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+          {paused
+            ? lang === "id"
+              ? "Putar"
+              : "Play"
+            : lang === "id"
+              ? "Jeda"
+              : "Pause"}
+        </button>
+      </div>
+    </section>
   );
 };

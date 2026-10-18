@@ -1,15 +1,23 @@
-import React, { useState, useEffect } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import {
   motion,
   AnimatePresence,
+  useInView,
+  useMotionTemplate,
   useMotionValue,
-  useTransform,
+  useReducedMotion,
   useSpring,
+  useTransform,
 } from "motion/react";
 import { Language, TranslationDict, Project } from "../types";
 import { projectsList } from "../data";
 import {
-  Code,
   ExternalLink,
   Calendar,
   Layers,
@@ -21,12 +29,20 @@ import {
   Maximize2,
   Images,
   BookOpen,
+  ArrowUpRight,
+  ShieldCheck,
 } from "lucide-react";
 
 interface ProjectGalleryProps {
   lang: Language;
   dict: TranslationDict;
 }
+
+type Filter = "all" | "web" | "mobile" | "ai";
+
+const FILTERS = ["all", "web"] as const;
+const EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
+const TILT_SPRING = { damping: 25, stiffness: 220, mass: 0.6 };
 
 const calculateReadingTime = (text: string) => {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
@@ -38,46 +54,71 @@ const calculateReadingTime = (text: string) => {
   return { value: mins, unitLabel: { en: "min read", id: "menit baca" } };
 };
 
+const getImages = (project: Project) =>
+  project.images && project.images.length > 0
+    ? project.images
+    : [project.image];
+
 const AnimatedCounter: React.FC<{
   value: number;
   duration?: number;
   suffix?: string;
   isDecimal?: boolean;
-}> = ({ value, duration = 1200, suffix = "", isDecimal = false }) => {
-  const [count, setCount] = useState(0);
+}> = ({ value, duration = 1400, suffix = "", isDecimal = false }) => {
+  const ref = useRef<HTMLSpanElement>(null);
+  const inView = useInView(ref, { once: true, margin: "-40px" });
+  const reduce = useReducedMotion();
+  const [count, setCount] = useState(reduce ? value : 0);
 
   useEffect(() => {
-    let startTime: number | null = null;
-    const step = (timestamp: number) => {
-      if (!startTime) startTime = timestamp;
-      const progress = Math.min((timestamp - startTime) / duration, 1);
-      const currentVal = progress * value;
-      setCount(currentVal);
-      if (progress < 1) {
-        window.requestAnimationFrame(step);
-      } else {
-        setCount(value);
-      }
+    if (!inView) return;
+    if (reduce) {
+      setCount(value);
+      return;
+    }
+    let raf = 0;
+    let start: number | null = null;
+    const step = (t: number) => {
+      if (start === null) start = t;
+      const p = Math.min((t - start) / duration, 1);
+      setCount((1 - Math.pow(1 - p, 3)) * value);
+      if (p < 1) raf = requestAnimationFrame(step);
+      else setCount(value);
     };
-    window.requestAnimationFrame(step);
-  }, [value, duration]);
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [inView, reduce, value, duration]);
 
   return (
-    <span>
+    <span ref={ref} className="tabular-nums">
       {isDecimal ? count.toFixed(1) : Math.floor(count)}
       {suffix}
     </span>
   );
 };
 
+const moveSpot = (e: React.MouseEvent<HTMLElement>) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  e.currentTarget.style.setProperty("--mx", `${e.clientX - r.left}px`);
+  e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
+};
+
+const SpotOverlay: React.FC = () => (
+  <span
+    aria-hidden="true"
+    className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+    style={{
+      background:
+        "radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), rgba(245,158,11,0.13), transparent 70%)",
+    }}
+  />
+);
+
 const containerVariants = {
   hidden: { opacity: 0 },
   show: {
     opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-      delayChildren: 0.05,
-    },
+    transition: { staggerChildren: 0.1, delayChildren: 0.05 },
   },
 };
 
@@ -87,12 +128,14 @@ const cardVariants = {
     opacity: 1,
     y: 0,
     scale: 1,
-    transition: {
-      type: "spring" as const,
-      stiffness: 90,
-      damping: 15,
-    },
+    transition: { type: "spring" as const, stiffness: 90, damping: 15 },
   },
+};
+
+const slideVariants = {
+  enter: (d: number) => ({ opacity: 0, x: d * 48 }),
+  center: { opacity: 1, x: 0 },
+  exit: (d: number) => ({ opacity: 0, x: d * -48 }),
 };
 
 interface ProjectCardProps {
@@ -108,31 +151,31 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
   dict,
   onClick,
 }) => {
+  const reduce = useReducedMotion();
   const x = useMotionValue(0.5);
   const y = useMotionValue(0.5);
 
-  const rotateX = useTransform(y, [0, 1], [7, -7]);
-  const rotateY = useTransform(x, [0, 1], [-7, 7]);
-
-  const springConfig = { damping: 25, stiffness: 220, mass: 0.6 };
-  const rotateXSpring = useSpring(rotateX, springConfig);
-  const rotateYSpring = useSpring(rotateY, springConfig);
-
+  const rotateX = useSpring(
+    useTransform(y, [0, 1], [6, -6]),
+    TILT_SPRING,
+  );
+  const rotateY = useSpring(
+    useTransform(x, [0, 1], [-6, 6]),
+    TILT_SPRING,
+  );
   const scale = useMotionValue(1);
-  const scaleSpring = useSpring(scale, springConfig);
+  const scaleSpring = useSpring(scale, TILT_SPRING);
+
+  const glareX = useTransform(x, (v) => `${v * 100}%`);
+  const glareY = useTransform(y, (v) => `${v * 100}%`);
+  const glare = useMotionTemplate`radial-gradient(360px circle at ${glareX} ${glareY}, rgba(245,158,11,0.16), transparent 65%)`;
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const card = e.currentTarget;
-    const rect = card.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
-
-    const relativeX = (e.clientX - rect.left) / width;
-    const relativeY = (e.clientY - rect.top) / height;
-
-    x.set(relativeX);
-    y.set(relativeY);
-    scale.set(1.025);
+    if (reduce) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    x.set((e.clientX - rect.left) / rect.width);
+    y.set((e.clientY - rect.top) / rect.height);
+    scale.set(1.02);
   };
 
   const handleMouseLeave = () => {
@@ -141,69 +184,82 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
     scale.set(1);
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onClick();
+    }
+  };
+
   const readingTime = calculateReadingTime(proj.description[lang]);
 
   return (
     <motion.div
-      layout
-      variants={cardVariants}
+      role="button"
+      tabIndex={0}
+      aria-label={`${proj.title[lang]} - ${dict.projects.viewProject}`}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
-      exit={{ opacity: 0, scale: 0.95 }}
-      style={{
-        transformPerspective: 1000,
-        transformStyle: "preserve-3d",
-        rotateX: rotateXSpring,
-        rotateY: rotateYSpring,
-        scale: scaleSpring,
-      }}
-      className="group relative flex flex-col h-full bg-white dark:bg-[#111113] rounded-2xl border border-neutral-200/60 dark:border-white/5 overflow-hidden cursor-pointer shadow-3xs hover:border-neutral-350 dark:hover:border-white/10 transition-colors duration-300 select-none"
+      onKeyDown={handleKeyDown}
       onClick={onClick}
+      style={
+        reduce
+          ? undefined
+          : {
+              transformPerspective: 1000,
+              rotateX,
+              rotateY,
+              scale: scaleSpring,
+            }
+      }
+      className="group relative flex h-full cursor-pointer select-none flex-col overflow-hidden rounded-2xl border border-neutral-200/70 bg-white shadow-sm transition-[border-color,box-shadow] duration-300 hover:border-amber-500/30 hover:shadow-xl hover:shadow-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:border-white/10 dark:bg-[#111113] dark:hover:border-amber-400/25 dark:focus-visible:ring-offset-[#0A0A0B]"
       id={`project-card-${proj.id}`}
     >
-      {/* Visual Image container */}
+      <motion.span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-20 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+        style={{ background: glare }}
+      />
+
       <div
-        className="relative w-full aspect-video overflow-hidden bg-neutral-100 dark:bg-neutral-900/60"
+        className="relative aspect-video w-full overflow-hidden bg-neutral-100 dark:bg-neutral-900/60"
         id={`p-image-container-${proj.id}`}
-        style={{ transform: "translateZ(20px)" }}
       >
-        {/* Category chip & Framer Motion Badges */}
         <div
-          className="absolute top-4 left-4 z-10 flex items-center gap-1.5 flex-wrap max-w-[80%]"
+          className="absolute left-4 top-4 z-10 flex max-w-[80%] flex-wrap items-center gap-1.5"
           id={`p-badges-container-${proj.id}`}
         >
-          <span className="px-2.5 py-1 rounded-md text-[9px] font-mono uppercase font-normal tracking-widest bg-neutral-950/85 text-white/80 border border-white/5">
+          <span className="rounded-md border border-white/5 bg-neutral-950/85 px-2.5 py-1 text-[9px] font-mono font-normal uppercase tracking-widest text-white/85 backdrop-blur-sm">
             {proj.category}
           </span>
           {proj.featured && (
             <motion.span
-              initial={{ opacity: 0, x: -10, scale: 0.9 }}
+              initial={reduce ? false : { opacity: 0, x: -10, scale: 0.9 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
-              whileHover={{ scale: 1.05 }}
+              whileHover={reduce ? undefined : { scale: 1.05 }}
               transition={{ type: "spring", stiffness: 200, damping: 15 }}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] font-mono uppercase font-bold tracking-widest bg-amber-500 text-neutral-950 shadow-[0_0_12px_rgba(245,158,11,0.25)] dark:shadow-[0_0_16px_rgba(245,158,11,0.15)] border border-amber-400"
+              className="flex items-center gap-1.5 rounded-md border border-amber-400 bg-amber-500 px-2.5 py-1 text-[9px] font-mono font-bold uppercase tracking-widest text-neutral-950 shadow-[0_0_14px_rgba(245,158,11,0.3)]"
               id={`featured-badge-${proj.id}`}
             >
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-neutral-950 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-neutral-950"></span>
+              <span className="relative flex h-1.5 w-1.5" aria-hidden="true">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-neutral-950 opacity-75 animate-ping motion-reduce:animate-none" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-neutral-950" />
               </span>
               <span>{lang === "en" ? "Case Study" : "Studi Kasus"}</span>
             </motion.span>
           )}
         </div>
 
-        {/* Multiple Images Indicator Badge */}
         {proj.images && proj.images.length > 1 && (
           <span
-            className="absolute top-4 right-4 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] font-mono font-medium tracking-wider bg-neutral-950/85 text-white border border-white/10 shadow-xs"
+            className="absolute right-4 top-4 z-10 flex items-center gap-1.5 rounded-md border border-white/10 bg-neutral-950/85 px-2.5 py-1 text-[9px] font-mono font-medium tracking-wider text-white shadow-sm backdrop-blur-sm"
             title={
               lang === "en"
                 ? `${proj.images.length} screenshots available`
                 : `${proj.images.length} gambar tersedia`
             }
           >
-            <Images className="w-3" />
+            <Images className="w-3" aria-hidden="true" />
             <span>
               {proj.images.length} {lang === "en" ? "Photos" : "Gambar"}
             </span>
@@ -214,62 +270,517 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
           src={proj.image}
           alt={proj.title[lang]}
           referrerPolicy="no-referrer"
-          className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-700 grayscale brightness-95 opacity-90 group-hover:grayscale-0 group-hover:opacity-100"
+          loading="lazy"
+          decoding="async"
+          className="h-full w-full object-cover opacity-90 brightness-95 grayscale transition-all duration-700 ease-out group-hover:scale-[1.06] group-hover:opacity-100 group-hover:grayscale-0 group-focus-visible:grayscale-0"
           id={`p-image-${proj.id}`}
         />
 
-        {/* Rollover view accent */}
         <div
-          className="absolute inset-0 bg-neutral-950/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center"
+          className="absolute inset-0 flex items-end justify-center bg-gradient-to-t from-neutral-950/70 via-neutral-950/10 to-transparent p-5 opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100"
           id={`p-rollover-${proj.id}`}
         >
-          <span className="px-5 py-2 rounded-xl bg-white text-neutral-950 font-normal text-xs shadow-lg uppercase tracking-wider font-mono">
+          <span className="inline-flex translate-y-2 items-center gap-1.5 rounded-xl bg-white px-4 py-2 font-mono text-[11px] uppercase tracking-wider text-neutral-950 shadow-lg transition-transform duration-300 group-hover:translate-y-0 group-focus-visible:translate-y-0">
             {dict.projects.viewProject}
+            <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
           </span>
         </div>
       </div>
 
-      {/* Content body */}
-      <div
-        className="p-6 flex flex-col flex-1"
-        id={`p-content-${proj.id}`}
-        style={{ transform: "translateZ(10px)" }}
-      >
-        <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 dark:text-white/30 block mb-1">
+      <div className="flex flex-1 flex-col p-6" id={`p-content-${proj.id}`}>
+        <span className="mb-1 block text-[10px] font-mono uppercase tracking-wider text-neutral-500 dark:text-white/40">
           {proj.year} • {proj.role[lang]} • {readingTime.value}{" "}
-          {lang === "en" ? readingTime.unitLabel.en : readingTime.unitLabel.id}
+          {readingTime.unitLabel[lang]}
         </span>
 
         <h3
-          className="text-lg font-medium text-neutral-900 dark:text-white group-hover:text-amber-500 dark:group-hover:text-amber-400 transition-colors duration-350"
+          className="text-lg font-medium text-neutral-900 transition-colors duration-300 group-hover:text-amber-600 dark:text-white dark:group-hover:text-amber-400"
           id={`p-title-${proj.id}`}
         >
           {proj.title[lang]}
         </h3>
 
         <p
-          className="text-neutral-500 dark:text-white/60 text-xs md:text-sm font-sans mt-2 line-clamp-2 leading-relaxed flex-1 font-light"
+          className="mt-2 line-clamp-2 flex-1 font-sans text-xs font-light leading-relaxed text-neutral-600 dark:text-white/60 md:text-sm"
           id={`p-desc-${proj.id}`}
         >
           {proj.description[lang]}
         </p>
 
-        {/* Tag chips */}
         <div
-          className="flex flex-wrap gap-1.5 mt-5 pt-4 border-t border-neutral-100 dark:border-white/5"
+          className="mt-5 flex flex-wrap gap-1.5 border-t border-neutral-100 pt-4 dark:border-white/5"
           id={`p-tags-${proj.id}`}
         >
           {proj.tags.slice(0, 4).map((tag, tIdx) => (
             <span
               key={tIdx}
-              className="text-[9px] font-mono px-2 py-0.5 rounded-md bg-neutral-50 dark:bg-white/5 text-neutral-500 dark:text-white/40 border border-neutral-150/50 dark:border-white/5"
+              className="rounded-md border border-neutral-200/60 bg-neutral-50 px-2 py-0.5 text-[9px] font-mono text-neutral-600 transition-colors group-hover:border-amber-500/20 dark:border-white/5 dark:bg-white/5 dark:text-white/50"
             >
               {tag}
             </span>
           ))}
         </div>
       </div>
+
+      <span
+        aria-hidden="true"
+        className="absolute inset-x-0 bottom-0 h-0.5 origin-left scale-x-0 bg-gradient-to-r from-amber-400 via-orange-500 to-amber-400 transition-transform duration-500 group-hover:scale-x-100"
+      />
     </motion.div>
+  );
+};
+
+interface ProjectModalProps {
+  project: Project;
+  lang: Language;
+  dict: TranslationDict;
+  onClose: () => void;
+}
+
+const ProjectModal: React.FC<ProjectModalProps> = ({
+  project,
+  lang,
+  dict,
+  onClose,
+}) => {
+  const reduce = useReducedMotion();
+  const titleId = useId();
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const zoomCloseRef = useRef<HTMLButtonElement>(null);
+  const images = getImages(project);
+  const total = images.length;
+
+  const [[index, direction], setPage] = useState<[number, number]>([0, 0]);
+  const [zoomOpen, setZoomOpen] = useState(false);
+
+  const paginate = useCallback(
+    (dir: number) => setPage(([i]) => [(i + dir + total) % total, dir]),
+    [total],
+  );
+
+  const goTo = (target: number) =>
+    setPage(([current]) => [target, target > current ? 1 : -1]);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    document.body.style.overflow = "hidden";
+    closeRef.current?.focus();
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (zoomOpen) zoomCloseRef.current?.focus();
+    else closeRef.current?.focus();
+  }, [zoomOpen]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (zoomOpen) setZoomOpen(false);
+        else onClose();
+        return;
+      }
+      if (total > 1) {
+        if (e.key === "ArrowRight") paginate(1);
+        else if (e.key === "ArrowLeft") paginate(-1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoomOpen, total, paginate, onClose]);
+
+  const modalReadingTime = calculateReadingTime(project.description[lang]);
+  const slideTransition = { duration: reduce ? 0 : 0.3, ease: EASE };
+
+  const navButton =
+    "absolute top-1/2 z-20 -translate-y-1/2 cursor-pointer rounded-full border border-white/10 bg-neutral-950/60 p-2 text-white shadow-md backdrop-blur-sm transition-all hover:scale-105 hover:bg-neutral-950 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 md:opacity-0 md:group-hover/carousel:opacity-100";
+
+  return (
+    <>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.25 }}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm md:p-6"
+        onClick={onClose}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        id="details-modal-overlay"
+      >
+        <motion.div
+          initial={reduce ? false : { opacity: 0, scale: 0.94, y: 24 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.96, y: 16 }}
+          transition={{ type: "spring", stiffness: 260, damping: 26 }}
+          className="relative flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-neutral-300 bg-white shadow-2xl dark:border-white/10 dark:bg-[#111113]"
+          onClick={(e) => e.stopPropagation()}
+          id="details-modal-card"
+        >
+          <span
+            aria-hidden="true"
+            className="absolute inset-x-0 top-0 z-30 h-0.5 bg-gradient-to-r from-amber-400 via-orange-500 to-amber-400"
+          />
+
+          <button
+            ref={closeRef}
+            onClick={onClose}
+            className="absolute right-4 top-4 z-30 cursor-pointer rounded-full border border-white/10 bg-neutral-950/60 p-2 text-white/95 shadow-md backdrop-blur-sm transition-all hover:rotate-90 hover:bg-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+            aria-label={lang === "en" ? "Close" : "Tutup"}
+            id="close-modal-btn"
+          >
+            <X className="h-4 w-4" />
+          </button>
+
+          <div
+            className="group/carousel relative h-[200px] w-full flex-shrink-0 overflow-hidden bg-neutral-950 sm:h-[240px] md:h-[280px]"
+            id="modal-cover-container"
+          >
+            <AnimatePresence initial={false} custom={direction} mode="popLayout">
+              <motion.img
+                key={index}
+                custom={direction}
+                variants={slideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={slideTransition}
+                src={images[index]}
+                alt={`${project.title[lang]} - Screenshot ${index + 1}`}
+                referrerPolicy="no-referrer"
+                className="absolute inset-0 h-full w-full cursor-zoom-in object-cover brightness-95"
+                onClick={() => setZoomOpen(true)}
+                id="modal-cover-image"
+              />
+            </AnimatePresence>
+
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/20 to-transparent" />
+
+            <div className="absolute left-4 top-4 z-10 flex gap-2">
+              <span className="rounded-md border border-white/10 bg-neutral-950/80 px-2.5 py-1 text-[10px] font-mono font-normal uppercase tracking-widest text-neutral-300 backdrop-blur-sm">
+                {project.category}
+              </span>
+              <span className="rounded-md border border-white/10 bg-neutral-950/80 px-2.5 py-1 text-[10px] font-mono tabular-nums text-white/90 backdrop-blur-sm">
+                {index + 1} / {total}
+              </span>
+            </div>
+
+            <button
+              onClick={() => setZoomOpen(true)}
+              className="absolute right-14 top-4 z-20 cursor-pointer rounded-full border border-white/10 bg-neutral-950/60 p-2 text-white/95 shadow-md backdrop-blur-sm transition-all hover:scale-105 hover:bg-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+              title={lang === "en" ? "Zoom Image" : "Perbesar Gambar"}
+              aria-label={lang === "en" ? "Zoom Image" : "Perbesar Gambar"}
+              id="zoom-image-btn"
+            >
+              <Maximize2 className="h-4 w-4" />
+            </button>
+
+            {total > 1 && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    paginate(-1);
+                  }}
+                  className={`${navButton} left-4`}
+                  aria-label={lang === "en" ? "Previous image" : "Gambar sebelumnya"}
+                  id="prev-image-btn"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    paginate(1);
+                  }}
+                  className={`${navButton} right-4`}
+                  aria-label={lang === "en" ? "Next image" : "Gambar berikutnya"}
+                  id="next-image-btn"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              </>
+            )}
+
+            <div
+              className="absolute bottom-6 left-6 z-10 pr-6"
+              id="modal-cover-title-group"
+            >
+              <h3
+                id={titleId}
+                className="text-xl font-light tracking-tight text-white md:text-2xl"
+              >
+                <span id="modal-project-title">{project.title[lang]}</span>
+              </h3>
+            </div>
+          </div>
+
+          {total > 1 && (
+            <div
+              className="scrollbar-none flex flex-shrink-0 gap-2 overflow-x-auto border-b border-neutral-100 bg-neutral-50/60 px-6 py-3 dark:border-white/5 dark:bg-white/[0.03] md:px-8"
+              id="modal-thumbnails-container"
+            >
+              {images.map((img, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => goTo(idx)}
+                  aria-label={`Screenshot ${idx + 1}`}
+                  aria-current={index === idx}
+                  className="relative aspect-video w-20 flex-shrink-0 cursor-pointer overflow-hidden rounded-lg border-2 border-transparent transition-colors hover:border-neutral-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:border-white/15"
+                  id={`thumbnail-selector-${idx}`}
+                >
+                  <img
+                    src={img}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    loading="lazy"
+                    className={`h-full w-full object-cover transition-all duration-300 ${
+                      index === idx
+                        ? "brightness-100"
+                        : "brightness-75 hover:brightness-100"
+                    }`}
+                  />
+                  {index === idx && (
+                    <motion.span
+                      layoutId="modal-thumb-ring"
+                      aria-hidden="true"
+                      transition={{ type: "spring", stiffness: 400, damping: 32 }}
+                      className="absolute inset-0 rounded-md border-2 border-amber-500"
+                    />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <motion.div
+            variants={{
+              hidden: {},
+              show: { transition: { staggerChildren: 0.07, delayChildren: 0.1 } },
+            }}
+            initial={reduce ? false : "hidden"}
+            animate="show"
+            className="modal-scrollbar flex-1 space-y-6 overflow-y-auto py-6 pl-6 pr-4 md:py-8 md:pl-8 md:pr-6"
+            id="modal-body-content"
+          >
+            <motion.p
+              variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }}
+              className="font-sans text-xs font-light leading-relaxed text-neutral-600 dark:text-white/70 md:text-sm"
+              id="modal-project-description"
+            >
+              {project.description[lang]}
+            </motion.p>
+
+            <motion.div
+              variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }}
+              className="grid grid-cols-3 gap-2 border-y border-neutral-100 py-4 font-mono text-[10px] text-neutral-500 dark:border-white/5 dark:text-white/45 sm:gap-4 sm:text-[11px]"
+              id="modal-metadata-grid"
+            >
+              <div className="flex items-center gap-2">
+                <UserCheck
+                  className="h-4 w-4 flex-shrink-0 text-neutral-400 dark:text-white/30"
+                  aria-hidden="true"
+                />
+                <div className="min-w-0">
+                  <span className="block text-[8px] uppercase tracking-wider text-neutral-500 dark:text-white/35">
+                    {dict.projects.roleLabel}
+                  </span>
+                  <span className="line-clamp-1 font-medium text-neutral-800 dark:text-white/80">
+                    {project.role[lang]}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Calendar
+                  className="h-4 w-4 flex-shrink-0 text-neutral-400 dark:text-white/30"
+                  aria-hidden="true"
+                />
+                <div>
+                  <span className="block text-[8px] uppercase tracking-wider text-neutral-500 dark:text-white/35">
+                    {dict.projects.yearLabel}
+                  </span>
+                  <span className="font-medium text-neutral-800 dark:text-white/80">
+                    {project.year}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <BookOpen
+                  className="h-4 w-4 flex-shrink-0 text-amber-600 dark:text-amber-400"
+                  aria-hidden="true"
+                />
+                <div>
+                  <span className="block text-[8px] uppercase tracking-wider text-neutral-500 dark:text-white/35">
+                    {lang === "en" ? "READ TIME" : "WAKTU BACA"}
+                  </span>
+                  <span className="whitespace-nowrap font-medium text-neutral-800 dark:text-white/80">
+                    {modalReadingTime.value}{" "}
+                    {modalReadingTime.unitLabel[lang].split(" ")[0]}
+                  </span>
+                </div>
+              </div>
+            </motion.div>
+
+            <motion.div
+              variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }}
+              className="space-y-3"
+              id="modal-tech-stack-group"
+            >
+              <h4 className="font-mono text-[10px] uppercase tracking-widest text-neutral-500 dark:text-white/40">
+                Engineered with
+              </h4>
+              <div className="flex flex-wrap gap-1.5">
+                {project.tags.map((tag, tIdx) => (
+                  <motion.span
+                    key={tIdx}
+                    whileHover={reduce ? undefined : { y: -2 }}
+                    className="rounded-md border border-neutral-200/60 bg-neutral-50 px-2.5 py-0.5 font-mono text-[10px] text-neutral-700 transition-colors hover:border-amber-500/30 dark:border-white/5 dark:bg-white/5 dark:text-white/75"
+                  >
+                    {tag}
+                  </motion.span>
+                ))}
+              </div>
+            </motion.div>
+
+            <motion.div
+              variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }}
+              className="flex justify-end pt-2"
+              id="modal-action-row"
+            >
+              <a
+                href={project.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group/cta relative inline-flex cursor-pointer items-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 px-6 py-2.5 font-mono text-[11px] font-medium text-neutral-950 shadow-lg shadow-amber-500/20 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-amber-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white active:translate-y-0 dark:focus-visible:ring-offset-[#111113]"
+                id="modal-external-link"
+              >
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-y-0 -left-full w-1/2 -skew-x-12 bg-white/40 transition-transform duration-700 group-hover/cta:translate-x-[400%]"
+                />
+                <Globe className="relative h-3.5 w-3.5" aria-hidden="true" />
+                <span className="relative">
+                  {lang === "en" ? "Open Live App" : "Buka Aplikasi"}
+                </span>
+                <ExternalLink
+                  className="relative h-3.5 w-3.5 transition-transform group-hover/cta:-translate-y-0.5 group-hover/cta:translate-x-0.5"
+                  aria-hidden="true"
+                />
+              </a>
+            </motion.div>
+          </motion.div>
+        </motion.div>
+      </motion.div>
+
+      <AnimatePresence>
+        {zoomOpen && (
+          <motion.div
+            key="lightbox"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-neutral-950/95 p-4 backdrop-blur-md"
+            onClick={() => setZoomOpen(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label={project.title[lang]}
+            id="fullscreen-lightbox-overlay"
+          >
+            <button
+              ref={zoomCloseRef}
+              onClick={(e) => {
+                e.stopPropagation();
+                setZoomOpen(false);
+              }}
+              className="absolute right-6 top-6 z-30 cursor-pointer rounded-full border border-white/10 bg-neutral-900/80 p-3 text-white/90 shadow-lg transition-all hover:rotate-90 hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+              aria-label={lang === "en" ? "Close" : "Tutup"}
+              id="lightbox-close-btn"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div
+              className="relative flex h-full max-h-[82vh] w-full max-w-5xl items-center justify-center overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+              id="lightbox-content-container"
+            >
+              <AnimatePresence initial={false} custom={direction} mode="popLayout">
+                <motion.img
+                  key={index}
+                  custom={direction}
+                  variants={slideVariants}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  transition={slideTransition}
+                  src={images[index]}
+                  alt={`${project.title[lang]} - Screenshot ${index + 1}`}
+                  referrerPolicy="no-referrer"
+                  className="max-h-full max-w-full rounded-xl border border-white/15 object-contain shadow-2xl"
+                  id="lightbox-main-img"
+                />
+              </AnimatePresence>
+
+              {total > 1 && (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      paginate(-1);
+                    }}
+                    className="absolute left-2 top-1/2 z-20 -translate-y-1/2 cursor-pointer rounded-full border border-white/10 bg-neutral-900/80 p-3 text-white/90 shadow-lg transition-all hover:scale-105 hover:bg-white hover:text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 md:left-4"
+                    aria-label={lang === "en" ? "Previous image" : "Gambar sebelumnya"}
+                    id="lightbox-prev-btn"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      paginate(1);
+                    }}
+                    className="absolute right-2 top-1/2 z-20 -translate-y-1/2 cursor-pointer rounded-full border border-white/10 bg-neutral-900/80 p-3 text-white/90 shadow-lg transition-all hover:scale-105 hover:bg-white hover:text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 md:right-4"
+                    aria-label={lang === "en" ? "Next image" : "Gambar berikutnya"}
+                    id="lightbox-next-btn"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+                </>
+              )}
+            </div>
+
+            <div
+              className="absolute bottom-6 flex select-none items-center gap-3 rounded-full border border-white/10 bg-neutral-900/80 px-4 py-1.5 font-mono text-xs text-white/70"
+              onClick={(e) => e.stopPropagation()}
+              id="lightbox-counter"
+            >
+              <span className="tabular-nums">
+                {index + 1} / {total}
+              </span>
+              {total > 1 && (
+                <span className="flex items-center gap-1.5" aria-hidden="true">
+                  {images.map((_, i) => (
+                    <span
+                      key={i}
+                      className={`h-1.5 rounded-full transition-all duration-300 ${
+                        i === index ? "w-4 bg-amber-400" : "w-1.5 bg-white/30"
+                      }`}
+                    />
+                  ))}
+                </span>
+              )}
+              <span className="hidden sm:inline">• {project.title[lang]}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 };
 
@@ -277,616 +788,259 @@ export const ProjectGallery: React.FC<ProjectGalleryProps> = ({
   lang,
   dict,
 }) => {
-  const [activeFilter, setActiveFilter] = useState<
-    "all" | "web" | "mobile" | "ai"
-  >("all");
+  const reduce = useReducedMotion();
+  const [activeFilter, setActiveFilter] = useState<Filter>("all");
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-  const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
-  const [zoomImage, setZoomImage] = useState<string | null>(null);
 
-  // Hook for Keyboard Arrow keys page switching and Escape closing
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (zoomImage) {
-        const projectImages =
-          selectedProject?.images && selectedProject.images.length > 0
-            ? selectedProject.images
-            : selectedProject
-              ? [selectedProject.image]
-              : [];
+  const closeModal = useCallback(() => setSelectedProject(null), []);
 
-        if (projectImages.length > 1) {
-          const currentZoomIdx = projectImages.indexOf(zoomImage);
-          if (e.key === "ArrowRight") {
-            const nextIdx =
-              currentZoomIdx === projectImages.length - 1
-                ? 0
-                : currentZoomIdx + 1;
-            setZoomImage(projectImages[nextIdx]);
-            setActiveImageIndex(nextIdx);
-          } else if (e.key === "ArrowLeft") {
-            const prevIdx =
-              currentZoomIdx === 0
-                ? projectImages.length - 1
-                : currentZoomIdx - 1;
-            setZoomImage(projectImages[prevIdx]);
-            setActiveImageIndex(prevIdx);
-          }
-        }
-        if (e.key === "Escape") {
-          setZoomImage(null);
-        }
-      } else if (selectedProject) {
-        const projectImages =
-          selectedProject.images && selectedProject.images.length > 0
-            ? selectedProject.images
-            : [selectedProject.image];
-
-        if (projectImages.length > 1) {
-          if (e.key === "ArrowRight") {
-            setActiveImageIndex((prev) =>
-              prev === projectImages.length - 1 ? 0 : prev + 1,
-            );
-          } else if (e.key === "ArrowLeft") {
-            setActiveImageIndex((prev) =>
-              prev === 0 ? projectImages.length - 1 : prev - 1,
-            );
-          }
-        }
-        if (e.key === "Escape") {
-          setSelectedProject(null);
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedProject, zoomImage]);
+  const countFor = (filter: Filter) =>
+    projectsList.filter((p) => filter === "all" || p.category === filter)
+      .length;
 
   const filteredProjects = projectsList.filter((proj) => {
     if (activeFilter === "all") return true;
     return proj.category === activeFilter;
   });
 
-  const categoryLabels: any = {
+  const categoryLabels: Record<(typeof FILTERS)[number], string> = {
     all: dict.projects.all,
     web: "Web Apps",
-    // mobile: 'Mobile Apps',
-    // ai: 'AI & Cloud Platform',
   };
+
+  const stats = [
+    {
+      icon: Layers,
+      label:
+        lang === "en" ? "Total Projects Completed" : "Total Proyek Selesai",
+      value: 42,
+      suffix: "+",
+      isDecimal: false,
+      desc:
+        lang === "en"
+          ? "SaaS, Mobile, & Open Source"
+          : "SaaS, Mobile, & Terbuka",
+    },
+    {
+      icon: Calendar,
+      label: lang === "en" ? "Years of Experience" : "Tahun Pengalaman",
+      value: 4,
+      suffix: "+",
+      isDecimal: false,
+      desc:
+        lang === "en" ? "Professional Engineering" : "Rekayasa Profesional",
+    },
+    {
+      icon: ShieldCheck,
+      label:
+        lang === "en" ? "System & SLA Reliability" : "Keandalan & SLA Sistem",
+      value: 99.9,
+      suffix: "%",
+      isDecimal: true,
+      desc:
+        lang === "en"
+          ? "Fault-tolerant server availability"
+          : "Ketersediaan server bebas downtime",
+    },
+  ];
 
   return (
     <section
-      className="py-24 bg-white dark:bg-[#0A0A0B] border-t border-neutral-100 dark:border-white/5 transition-colors duration-300"
+      className="relative scroll-mt-24 overflow-hidden border-t border-neutral-100 bg-white py-24 transition-colors duration-300 dark:border-white/5 dark:bg-[#0A0A0B]"
       id="projects-section"
     >
-      <div className="max-w-7xl mx-auto px-6 md:px-8">
-        {/* Section Header */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.04)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)] dark:bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)]"
+      />
+      <motion.div
+        aria-hidden="true"
+        animate={
+          reduce
+            ? undefined
+            : { x: [0, 40, 0], y: [0, 24, 0], opacity: [0.45, 0.85, 0.45] }
+        }
+        transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
+        className="pointer-events-none absolute -top-20 left-1/4 h-72 w-72 rounded-full bg-amber-500/15 blur-[90px]"
+      />
+      <motion.div
+        aria-hidden="true"
+        animate={
+          reduce
+            ? undefined
+            : { x: [0, -40, 0], y: [0, 30, 0], opacity: [0.35, 0.7, 0.35] }
+        }
+        transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
+        className="pointer-events-none absolute right-1/4 top-72 h-64 w-64 rounded-full bg-orange-500/10 blur-[90px]"
+      />
+
+      <div className="relative mx-auto max-w-7xl px-6 md:px-8">
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={reduce ? false : { opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-100px" }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-          className="text-center mb-16"
+          transition={{ duration: 0.8, ease: EASE }}
+          className="mb-16 text-center"
           id="projects-header"
         >
-          <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-500 dark:text-white/50 border border-neutral-200 dark:border-white/10 px-3.5 py-1 rounded-full">
+          <span className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white/70 px-3.5 py-1.5 text-[10px] font-mono uppercase tracking-wider text-neutral-600 backdrop-blur-sm dark:border-white/10 dark:bg-white/5 dark:text-white/60">
+            <span className="relative flex h-1.5 w-1.5" aria-hidden="true">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-60 animate-ping motion-reduce:animate-none" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-500" />
+            </span>
             {dict.nav.projects}
           </span>
           <h2
-            className="text-3xl md:text-4xl lg:text-5xl font-sans font-light text-neutral-900 dark:text-white mt-4 tracking-tight"
+            className="mt-5 font-sans text-3xl font-light tracking-tight text-neutral-900 dark:text-white md:text-4xl lg:text-5xl"
             id="projects-title"
           >
-            {dict.projects.title}
+            <motion.span
+              animate={
+                reduce
+                  ? undefined
+                  : { backgroundPosition: ["0% 50%", "100% 50%", "0% 50%"] }
+              }
+              transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+              style={{ backgroundSize: "200% 200%" }}
+              className="bg-gradient-to-r from-neutral-900 via-amber-600 to-neutral-900 bg-clip-text text-transparent dark:from-white dark:via-amber-400 dark:to-white"
+            >
+              {dict.projects.title}
+            </motion.span>
           </h2>
           <p
-            className="text-neutral-500 dark:text-white/40 mt-3 font-sans max-w-2xl mx-auto font-light text-sm italic"
+            className="mx-auto mt-4 max-w-2xl font-sans text-sm font-light italic text-neutral-500 dark:text-white/45"
             id="projects-subtitle"
           >
             {dict.projects.subtitle}
           </p>
         </motion.div>
 
-        {/* Interactive Stats Component */}
         <div
-          className="max-w-4xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-6 mb-16 px-4"
+          className="mx-auto mb-16 grid max-w-4xl grid-cols-1 gap-6 px-4 sm:grid-cols-3"
           id="projects-stats-grid"
         >
-          {[
-            {
-              label:
-                lang === "en"
-                  ? "Total Projects Completed"
-                  : "Total Proyek Selesai",
-              value: 42,
-              suffix: "+",
-              isDecimal: false,
-              desc:
-                lang === "en"
-                  ? "SaaS, Mobile, & Open Source"
-                  : "SaaS, Mobile, & Terbuka",
-            },
-            {
-              label: lang === "en" ? "Years of Experience" : "Tahun Pengalaman",
-              value: 4,
-              suffix: "+",
-              isDecimal: false,
-              desc:
-                lang === "en"
-                  ? "Professional Engineering"
-                  : "Rekayasa Profesional",
-            },
-            {
-              label:
-                lang === "en"
-                  ? "System & SLA Reliability"
-                  : "Keandalan & SLA Sistem",
-              value: 99.9,
-              suffix: "%",
-              isDecimal: true,
-              desc:
-                lang === "en"
-                  ? "Fault-tolerant server availability"
-                  : "Ketersediaan server bebas downtime",
-            },
-          ].map((stat, idx) => (
-            <motion.div
-              key={idx}
-              initial={{ opacity: 0, y: 15 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: idx * 0.1 }}
-              className="bg-neutral-50 dark:bg-white/2 border border-neutral-200/60 dark:border-white/5 rounded-2xl p-6 text-center hover:border-neutral-350 dark:hover:border-white/10 transition-colors duration-300"
-            >
-              <div className="text-3xl md:text-4xl font-mono text-amber-500 dark:text-amber-400 font-bold mb-1">
-                <AnimatedCounter
-                  value={stat.value}
-                  suffix={stat.suffix}
-                  isDecimal={stat.isDecimal}
-                />
-              </div>
-              <div className="text-xs font-mono uppercase tracking-wider text-neutral-800 dark:text-white/80 font-medium">
-                {stat.label}
-              </div>
-              <div className="text-[11px] text-neutral-450 dark:text-white/40 mt-1 font-light">
-                {stat.desc}
-              </div>
-            </motion.div>
-          ))}
+          {stats.map((stat, idx) => {
+            const StatIcon = stat.icon;
+            return (
+              <motion.div
+                key={idx}
+                initial={reduce ? false : { opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6, ease: EASE, delay: idx * 0.1 }}
+                whileHover={reduce ? undefined : { y: -4 }}
+                onMouseMove={moveSpot}
+                className="group relative overflow-hidden rounded-2xl border border-neutral-200/70 bg-neutral-50/80 p-6 text-center transition-colors duration-300 hover:border-amber-500/30 dark:border-white/10 dark:bg-white/[0.03] dark:hover:border-amber-400/25"
+              >
+                <SpotOverlay />
+                <span
+                  className="relative mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10 text-amber-700 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110 dark:text-amber-400"
+                  aria-hidden="true"
+                >
+                  <StatIcon className="h-4 w-4" />
+                </span>
+                <div className="relative mb-1 bg-gradient-to-r from-amber-600 to-orange-500 bg-clip-text font-mono text-3xl font-bold text-transparent dark:from-amber-300 dark:to-orange-400 md:text-4xl">
+                  <AnimatedCounter
+                    value={stat.value}
+                    suffix={stat.suffix}
+                    isDecimal={stat.isDecimal}
+                  />
+                </div>
+                <div className="relative text-xs font-mono font-medium uppercase tracking-wider text-neutral-800 dark:text-white/80">
+                  {stat.label}
+                </div>
+                <div className="relative mt-1 text-[11px] font-light text-neutral-500 dark:text-white/45">
+                  {stat.desc}
+                </div>
+              </motion.div>
+            );
+          })}
         </div>
 
-        {/* Filter Controls */}
         <motion.div
-          initial={{ opacity: 0, y: 15 }}
+          initial={reduce ? false : { opacity: 0, y: 15 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-100px" }}
-          transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
-          className="flex flex-wrap justify-center gap-2.5 mb-16"
+          transition={{ duration: 0.6, ease: EASE, delay: 0.1 }}
+          className="mb-16 flex flex-wrap justify-center gap-2.5"
+          role="group"
+          aria-label={dict.projects.title}
           id="filter-controls"
         >
-          {/* {(["all", "web", "mobile", "ai"] as const).map((filter) => (
-            <button
-              key={filter}
-              onClick={() => setActiveFilter(filter)}
-              className={`px-5 py-2 rounded-full text-[10px] font-mono tracking-wider uppercase transition-all duration-300 border cursor-pointer ${
-                activeFilter === filter
-                  ? "bg-neutral-900 dark:bg-white text-white dark:text-neutral-950 border-neutral-900 dark:border-white shadow-2xs"
-                  : "bg-transparent text-neutral-500 dark:text-white/40 border-neutral-200 dark:border-white/10 hover:border-neutral-450 dark:hover:border-white/20 hover:text-neutral-800 dark:hover:text-white"
-              }`}
-              id={`filter-${filter}`}
-            >
-              {categoryLabels[filter]}
-            </button>
-          ))} */}
-          {(["all", "web"] as const).map((filter) => (
-            <button
-              key={filter}
-              onClick={() => setActiveFilter(filter)}
-              className={`px-5 py-2 rounded-full text-[10px] font-mono tracking-wider uppercase transition-all duration-300 border cursor-pointer ${
-                activeFilter === filter
-                  ? "bg-neutral-900 dark:bg-white text-white dark:text-neutral-950 border-neutral-900 dark:border-white shadow-2xs"
-                  : "bg-transparent text-neutral-500 dark:text-white/40 border-neutral-200 dark:border-white/10 hover:border-neutral-450 dark:hover:border-white/20 hover:text-neutral-800 dark:hover:text-white"
-              }`}
-              id={`filter-${filter}`}
-            >
-              {categoryLabels[filter]}
-            </button>
-          ))}
+          {FILTERS.map((filter) => {
+            const active = activeFilter === filter;
+            return (
+              <button
+                key={filter}
+                onClick={() => setActiveFilter(filter)}
+                aria-pressed={active}
+                className={`relative cursor-pointer rounded-full border px-5 py-2 text-[10px] font-mono uppercase tracking-wider transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-[#0A0A0B] ${
+                  active
+                    ? "border-transparent text-white dark:text-neutral-950"
+                    : "border-neutral-200 bg-transparent text-neutral-600 hover:border-amber-500/40 hover:text-neutral-900 dark:border-white/10 dark:text-white/50 dark:hover:text-white"
+                }`}
+                id={`filter-${filter}`}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="filter-pill"
+                    aria-hidden="true"
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                    className="absolute inset-0 rounded-full bg-neutral-900 shadow-md dark:bg-white"
+                  />
+                )}
+                <span className="relative flex items-center gap-2">
+                  {categoryLabels[filter]}
+                  <span className="tabular-nums opacity-60">
+                    {countFor(filter)}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
         </motion.div>
 
-        {/* Projects Grid Grid */}
         <motion.div
           layout
           variants={containerVariants}
-          initial="hidden"
+          initial={reduce ? false : "hidden"}
           whileInView="show"
           viewport={{ once: true, margin: "-100px" }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
+          className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3"
           id="project-cards-grid"
         >
           <AnimatePresence mode="popLayout">
             {filteredProjects.map((proj) => (
-              <ProjectCard
+              <motion.div
                 key={proj.id}
-                proj={proj}
-                lang={lang}
-                dict={dict}
-                onClick={() => {
-                  setSelectedProject(proj);
-                  setActiveImageIndex(0);
-                }}
-              />
+                layout
+                variants={cardVariants}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="h-full"
+              >
+                <ProjectCard
+                  proj={proj}
+                  lang={lang}
+                  dict={dict}
+                  onClick={() => setSelectedProject(proj)}
+                />
+              </motion.div>
             ))}
           </AnimatePresence>
         </motion.div>
-
-        {/* Detailed Modal/Drawer overlay */}
-        <AnimatePresence>
-          {selectedProject &&
-            (() => {
-              const projectImages =
-                selectedProject.images && selectedProject.images.length > 0
-                  ? selectedProject.images
-                  : [selectedProject.image];
-
-              return (
-                <div
-                  className="fixed inset-0 bg-black/80 backdrop-blur-xs z-50 flex justify-center items-center p-4 md:p-6"
-                  onClick={() => setSelectedProject(null)}
-                  id="details-modal-overlay"
-                >
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.96, y: 10 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.96, y: 10 }}
-                    transition={{ duration: 0.3 }}
-                    className="w-full max-w-2xl max-h-[85vh] bg-white dark:bg-[#111113] rounded-2xl border border-neutral-300 dark:border-white/5 overflow-hidden shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 flex flex-col"
-                    onClick={(e) => e.stopPropagation()}
-                    id="details-modal-card"
-                  >
-                    {/* Close Button */}
-                    <button
-                      onClick={() => setSelectedProject(null)}
-                      className="absolute top-4 right-4 z-35 p-2 rounded-full bg-neutral-950/60 text-white/95 hover:bg-neutral-950 hover:scale-105 border border-white/5 shadow-md cursor-pointer transition-all"
-                      id="close-modal-btn"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-
-                    {/* Interactive Slideshow Cover Image */}
-                    <div
-                      className="relative w-full h-[200px] sm:h-[240px] md:h-[280px] bg-neutral-950 group/carousel overflow-hidden flex-shrink-0"
-                      id="modal-cover-container"
-                    >
-                      <AnimatePresence mode="wait">
-                        <motion.img
-                          key={activeImageIndex}
-                          src={projectImages[activeImageIndex]}
-                          alt={`${selectedProject.title[lang]} - Screenshot ${activeImageIndex + 1}`}
-                          referrerPolicy="no-referrer"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.25 }}
-                          className="w-full h-full object-cover brightness-95 cursor-zoom-in"
-                          onClick={() =>
-                            setZoomImage(projectImages[activeImageIndex])
-                          }
-                          id="modal-cover-image"
-                        />
-                      </AnimatePresence>
-
-                      {/* Gradient Overlay for Title */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/20 to-transparent pointer-events-none"></div>
-
-                      {/* Top Header / Badges */}
-                      <div className="absolute top-4 left-4 z-10 flex gap-2">
-                        <span className="text-[10px] font-mono font-normal tracking-widest text-neutral-300 uppercase bg-neutral-950/80 border border-white/10 px-2.5 py-1 rounded-md">
-                          {selectedProject.category}
-                        </span>
-                        <span className="text-[10px] font-mono text-white/90 bg-neutral-950/80 border border-white/10 px-2.5 py-1 rounded-md">
-                          {activeImageIndex + 1} / {projectImages.length}
-                        </span>
-                      </div>
-
-                      {/* Right Header Controls: Zoom Image */}
-                      <button
-                        onClick={() =>
-                          setZoomImage(projectImages[activeImageIndex])
-                        }
-                        className="absolute top-4 right-14 z-20 p-2 rounded-full bg-neutral-950/60 text-white/95 hover:bg-neutral-955 hover:scale-105 border border-white/5 shadow-md cursor-pointer transition-all"
-                        title={lang === "en" ? "Zoom Image" : "Perbesar Gambar"}
-                        id="zoom-image-btn"
-                      >
-                        <Maximize2 className="w-4 h-4" />
-                      </button>
-
-                      {/* Navigation Arrows for multi-image project */}
-                      {projectImages.length > 1 && (
-                        <>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveImageIndex((prev) =>
-                                prev === 0
-                                  ? projectImages.length - 1
-                                  : prev - 1,
-                              );
-                            }}
-                            className="absolute left-4 top-1/2 -translate-y-1/2 z-25 p-2 rounded-full bg-neutral-950/60 text-white hover:bg-neutral-950 hover:scale-105 transition-all cursor-pointer border border-white/5 shadow-md md:opacity-0 group-hover/carousel:opacity-100"
-                            id="prev-image-btn"
-                          >
-                            <ChevronLeft className="w-5 h-5" />
-                          </button>
-
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveImageIndex((prev) =>
-                                prev === projectImages.length - 1
-                                  ? 0
-                                  : prev + 1,
-                              );
-                            }}
-                            className="absolute right-4 top-1/2 -translate-y-1/2 z-25 p-2 rounded-full bg-neutral-950/60 text-white hover:bg-neutral-955 hover:scale-105 transition-all cursor-pointer border border-white/5 shadow-md md:opacity-0 group-hover/carousel:opacity-100"
-                            id="next-image-btn"
-                          >
-                            <ChevronRight className="w-5 h-5" />
-                          </button>
-                        </>
-                      )}
-
-                      {/* Title Overlay in Carousel bottom */}
-                      <div
-                        className="absolute bottom-6 left-6 z-10"
-                        id="modal-cover-title-group"
-                      >
-                        <h3
-                          className="text-xl md:text-2xl font-light text-white tracking-tight"
-                          id="modal-project-title"
-                        >
-                          {selectedProject.title[lang]}
-                        </h3>
-                      </div>
-                    </div>
-
-                    {/* Interactive Thumbnail Gallery Row */}
-                    {projectImages.length > 1 && (
-                      <div
-                        className="px-6 md:px-8 py-3 flex gap-2 overflow-x-auto scrollbar-none border-b border-neutral-100 dark:border-white/5 bg-neutral-50/50 dark:bg-white/2 flex-shrink-0"
-                        id="modal-thumbnails-container"
-                      >
-                        {projectImages.map((img, idx) => (
-                          <button
-                            key={idx}
-                            onClick={() => setActiveImageIndex(idx)}
-                            className={`relative aspect-video w-20 rounded-lg overflow-hidden border-2 flex-shrink-0 cursor-pointer transition-all duration-200 ${
-                              activeImageIndex === idx
-                                ? "border-amber-500 scale-102 shadow-xs"
-                                : "border-transparent hover:border-neutral-300 dark:hover:border-white/10"
-                            }`}
-                            id={`thumbnail-selector-${idx}`}
-                          >
-                            <img
-                              src={img}
-                              alt={`Thumbnail ${idx + 1}`}
-                              referrerPolicy="no-referrer"
-                              className={`w-full h-full object-cover transition-all ${
-                                activeImageIndex === idx
-                                  ? "brightness-100"
-                                  : "brightness-75 hover:brightness-100"
-                              }`}
-                            />
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Modal Detail Content */}
-                    <div
-                      className="pl-6 pr-4 md:pl-8 md:pr-6 py-6 md:py-8 space-y-6 overflow-y-auto flex-1 modal-scrollbar"
-                      id="modal-body-content"
-                    >
-                      <p
-                        className="text-neutral-600 dark:text-white/70 text-xs md:text-sm font-sans leading-relaxed font-light"
-                        id="modal-project-description"
-                      >
-                        {selectedProject.description[lang]}
-                      </p>
-
-                      {(() => {
-                        const modalReadingTime = calculateReadingTime(
-                          selectedProject.description[lang],
-                        );
-                        return (
-                          <div
-                            className="grid grid-cols-3 gap-2 sm:gap-4 border-y border-neutral-100 dark:border-white/5 py-4 font-mono text-[10px] sm:text-[11px] text-neutral-500 dark:text-white/40"
-                            id="modal-metadata-grid"
-                          >
-                            <div className="flex items-center gap-2">
-                              <UserCheck className="w-4 h-4 text-neutral-400 dark:text-white/30 flex-shrink-0" />
-                              <div className="min-w-0">
-                                <span className="block text-[8px] uppercase tracking-wider text-neutral-400 dark:text-white/30">
-                                  {dict.projects.roleLabel}
-                                </span>
-                                <span className="font-medium text-neutral-800 dark:text-white/80 line-clamp-1">
-                                  {selectedProject.role[lang]}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Calendar className="w-4 h-4 text-neutral-400 dark:text-white/30 flex-shrink-0" />
-                              <div>
-                                <span className="block text-[8px] uppercase tracking-wider text-neutral-400 dark:text-white/30">
-                                  {dict.projects.yearLabel}
-                                </span>
-                                <span className="font-medium text-neutral-800 dark:text-white/80">
-                                  {selectedProject.year}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <BookOpen className="w-4 h-4 text-amber-500 dark:text-amber-400 flex-shrink-0" />
-                              <div>
-                                <span className="block text-[8px] uppercase tracking-wider text-neutral-400 dark:text-white/30">
-                                  {lang === "en" ? "READ TIME" : "WAKTU BACA"}
-                                </span>
-                                <span className="font-medium text-neutral-800 dark:text-white/80 whitespace-nowrap">
-                                  {modalReadingTime.value}{" "}
-                                  {lang === "en"
-                                    ? modalReadingTime.unitLabel.en.split(
-                                        " ",
-                                      )[0]
-                                    : modalReadingTime.unitLabel.id.split(
-                                        " ",
-                                      )[0]}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {/* Core specifications specs and action link */}
-                      <div className="space-y-3" id="modal-tech-stack-group">
-                        <h4 className="font-mono text-[10px] uppercase tracking-widest text-neutral-400 dark:text-white/30">
-                          Engineered with
-                        </h4>
-                        <div className="flex flex-wrap gap-1.5">
-                          {selectedProject.tags.map((tag, tIdx) => (
-                            <span
-                              key={tIdx}
-                              className="font-mono text-[10px] text-neutral-700 dark:text-white/75 px-2.5 py-0.5 bg-neutral-50 dark:bg-white/5 border border-neutral-200/50 dark:border-white/5 rounded-md"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div
-                        className="flex justify-end pt-2"
-                        id="modal-action-row"
-                      >
-                        <a
-                          href={selectedProject.link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 font-normal hover:opacity-90 active:scale-98 transition-all font-mono text-[11px] shadow-sm cursor-pointer"
-                          id="modal-external-link"
-                        >
-                          <Globe className="w-3.5 h-3.5" />
-                          <span>
-                            {lang === "en" ? "Open Live App" : "Buka Aplikasi"}
-                          </span>
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
-                      </div>
-                    </div>
-                  </motion.div>
-                </div>
-              );
-            })()}
-        </AnimatePresence>
-
-        {/* Full-Screen Immersive Lightbox Zoom Modal */}
-        <AnimatePresence>
-          {zoomImage &&
-            selectedProject &&
-            (() => {
-              const projectImages =
-                selectedProject.images && selectedProject.images.length > 0
-                  ? selectedProject.images
-                  : [selectedProject.image];
-              const currentZoomIdx = projectImages.indexOf(zoomImage);
-
-              return (
-                <div
-                  className="fixed inset-0 bg-neutral-950/95 backdrop-blur-md z-[100] flex flex-col items-center justify-center p-4 animate-in fade-in duration-200"
-                  onClick={() => setZoomImage(null)}
-                  id="fullscreen-lightbox-overlay"
-                >
-                  {/* Top Close Button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setZoomImage(null);
-                    }}
-                    className="absolute top-6 right-6 z-55 p-3 rounded-full bg-neutral-900/80 text-white/90 hover:bg-neutral-800 border border-white/10 shadow-lg cursor-pointer transition-all"
-                    id="lightbox-close-btn"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-
-                  {/* Lightbox Main Image & Navigation controls */}
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ duration: 0.25 }}
-                    className="relative max-w-5xl max-h-[82vh] w-full h-full flex items-center justify-center"
-                    onClick={(e) => e.stopPropagation()}
-                    id="lightbox-content-container"
-                  >
-                    <img
-                      src={zoomImage}
-                      alt="Enlarged detailed screenshot"
-                      referrerPolicy="no-referrer"
-                      className="max-w-full max-h-full object-contain rounded-xl shadow-2xl border border-white/15"
-                      id="lightbox-main-img"
-                    />
-
-                    {/* Left Navigation Arrow in Lightbox */}
-                    {projectImages.length > 1 && (
-                      <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const prevIdx =
-                              currentZoomIdx === 0
-                                ? projectImages.length - 1
-                                : currentZoomIdx - 1;
-                            setZoomImage(projectImages[prevIdx]);
-                            setActiveImageIndex(prevIdx);
-                          }}
-                          className="absolute left-2 md:-left-16 top-1/2 -translate-y-1/2 z-55 p-3 rounded-full bg-neutral-900/80 text-white/90 hover:bg-white hover:text-neutral-950 border border-white/10 shadow-lg cursor-pointer transition-all"
-                          id="lightbox-prev-btn"
-                        >
-                          <ChevronLeft className="w-5 h-5" />
-                        </button>
-
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const nextIdx =
-                              currentZoomIdx === projectImages.length - 1
-                                ? 0
-                                : currentZoomIdx + 1;
-                            setZoomImage(projectImages[nextIdx]);
-                            setActiveImageIndex(nextIdx);
-                          }}
-                          className="absolute right-2 md:-right-16 top-1/2 -translate-y-1/2 z-55 p-3 rounded-full bg-neutral-900/80 text-white/90 hover:bg-white hover:text-neutral-950 border border-white/10 shadow-lg cursor-pointer transition-all"
-                          id="lightbox-next-btn"
-                        >
-                          <ChevronRight className="w-5 h-5" />
-                        </button>
-                      </>
-                    )}
-                  </motion.div>
-
-                  {/* Status bar */}
-                  <div
-                    className="absolute bottom-6 text-white/65 font-mono text-xs select-none bg-neutral-900/80 border border-white/5 py-1 px-4 rounded-full"
-                    id="lightbox-counter"
-                  >
-                    {currentZoomIdx + 1} / {projectImages.length} •{" "}
-                    {selectedProject.title[lang]}
-                  </div>
-                </div>
-              );
-            })()}
-        </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {selectedProject && (
+          <ProjectModal
+            key={selectedProject.id}
+            project={selectedProject}
+            lang={lang}
+            dict={dict}
+            onClose={closeModal}
+          />
+        )}
+      </AnimatePresence>
     </section>
   );
 };

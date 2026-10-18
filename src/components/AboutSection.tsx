@@ -1,5 +1,14 @@
-import React from "react";
-import { motion } from "motion/react";
+import React, { useRef } from "react";
+import {
+  motion,
+  useScroll,
+  useTransform,
+  useSpring,
+  useMotionValue,
+  useMotionTemplate,
+  useReducedMotion,
+  MotionValue,
+} from "motion/react";
 import {
   User,
   Sparkles,
@@ -17,7 +26,78 @@ interface AboutSectionProps {
   dict: TranslationDict;
 }
 
+const EASE = [0.22, 1, 0.36, 1] as const;
+
+const reveal = (delay = 0, x = 0, y = 24) => ({
+  initial: { opacity: 0, x, y },
+  whileInView: { opacity: 1, x: 0, y: 0 },
+  viewport: { once: true, margin: "-60px" },
+  transition: { duration: 0.8, delay, ease: EASE },
+});
+
+const Word: React.FC<{
+  children: string;
+  range: [number, number];
+  progress: MotionValue<number>;
+}> = ({ children, range, progress }) => {
+  const opacity = useTransform(progress, range, [0.25, 1]);
+  return (
+    <motion.span style={{ opacity }} className="inline-block mr-[0.28em]">
+      {children}
+    </motion.span>
+  );
+};
+
+// Words light up as the paragraph scrolls through the viewport.
+const ScrollParagraph: React.FC<{ text: string; reduced: boolean }> = ({
+  text,
+  reduced,
+}) => {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    offset: ["start 0.9", "end 0.6"],
+  });
+  const words = text.split(" ");
+
+  return (
+    <p
+      ref={ref}
+      className="text-neutral-700 dark:text-neutral-200 text-sm md:text-base leading-relaxed mb-4 font-normal"
+    >
+      {words.map((word, i) =>
+        reduced ? (
+          <span key={i} className="inline-block mr-[0.28em]">
+            {word}
+          </span>
+        ) : (
+          <Word
+            key={i}
+            progress={scrollYProgress}
+            range={[i / words.length, (i + 1) / words.length]}
+          >
+            {word}
+          </Word>
+        ),
+      )}
+    </p>
+  );
+};
+
 export const AboutSection: React.FC<AboutSectionProps> = ({ lang, dict }) => {
+  const reduced = !!useReducedMotion();
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  const mx = useMotionValue(0.5);
+  const my = useMotionValue(0.5);
+  const spring = { stiffness: 140, damping: 18, mass: 0.6 };
+  const rotateX = useSpring(useTransform(my, [0, 1], [5, -5]), spring);
+  const rotateY = useSpring(useTransform(mx, [0, 1], [-6, 6]), spring);
+  const spotX = useTransform(mx, (v) => `${v * 100}%`);
+  const spotY = useTransform(my, (v) => `${v * 100}%`);
+  const spotlight = useMotionTemplate`radial-gradient(300px circle at ${spotX} ${spotY}, rgba(245,158,11,0.14), transparent 70%)`;
+  const spotOpacity = useMotionValue(0);
+
   if (!dict.about) return null;
 
   const { title, subtitle, heading, bioParagraph1, bioParagraph2, highlights } =
@@ -29,40 +109,52 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ lang, dict }) => {
     <Terminal className="w-5 h-5 text-amber-500" />,
   ];
 
+  const handleMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (reduced || !cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    mx.set((e.clientX - rect.left) / rect.width);
+    my.set((e.clientY - rect.top) / rect.height);
+  };
+
+  const handleEnter = () => !reduced && spotOpacity.set(1);
+
+  const handleLeave = () => {
+    mx.set(0.5);
+    my.set(0.5);
+    spotOpacity.set(0);
+  };
+
   return (
     <section
       className="py-16 lg:py-24 bg-neutral-50 dark:bg-[#0C0C0E] border-y border-neutral-200/60 dark:border-white/5 relative overflow-hidden"
       id="about-section"
     >
-      {/* Background ambient glow */}
-      <div className="absolute top-1/2 left-0 -translate-y-1/2 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+      {/* Background ambient glow, drifts slowly */}
+      <motion.div
+        aria-hidden
+        animate={reduced ? undefined : { y: [0, -30, 0], x: [0, 20, 0] }}
+        transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
+        className="absolute top-1/2 left-0 -translate-y-1/2 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl pointer-events-none"
+      />
 
       <div className="max-w-7xl mx-auto px-6 md:px-8 relative z-10">
         {/* Section Header */}
         <div className="text-center max-w-2xl mx-auto mb-12 md:mb-16">
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
+            {...reveal(0, 0, 12)}
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] font-mono tracking-widest uppercase mb-3"
           >
             <User className="w-3 h-3" />
             <span>{title}</span>
           </motion.div>
           <motion.h2
-            initial={{ opacity: 0, y: 10 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.1 }}
+            {...reveal(0.1, 0, 16)}
             className="text-2xl md:text-3xl lg:text-4xl font-bold tracking-tight text-neutral-900 dark:text-white"
           >
             {heading}
           </motion.h2>
           <motion.p
-            initial={{ opacity: 0, y: 10 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.2 }}
+            {...reveal(0.2, 0, 12)}
             className="text-neutral-500 dark:text-neutral-400 text-xs mt-2 font-mono uppercase tracking-wider"
           >
             {subtitle}
@@ -73,92 +165,148 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ lang, dict }) => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
           {/* Left Profile Card (Col 4) */}
           <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-            className="lg:col-span-4 rounded-3xl bg-white dark:bg-[#131316] p-8 border border-neutral-200/80 dark:border-white/10 shadow-xl flex flex-col justify-between relative group overflow-hidden"
+            {...reveal(0, -32, 0)}
+            className="lg:col-span-4"
+            style={{ perspective: 1000 }}
             id="owner-profile-card"
           >
-            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-amber-500/10 to-transparent rounded-bl-full pointer-events-none transition-transform duration-500 group-hover:scale-110" />
+            <motion.div
+              ref={cardRef}
+              onMouseMove={handleMove}
+              onMouseEnter={handleEnter}
+              onMouseLeave={handleLeave}
+              style={reduced ? undefined : { rotateX, rotateY }}
+              className="h-full rounded-3xl bg-white dark:bg-[#131316] p-8 border border-neutral-200/80 dark:border-white/10 shadow-xl flex flex-col justify-between relative group overflow-hidden will-change-transform"
+            >
+              <motion.div
+                aria-hidden
+                style={{ background: spotlight, opacity: spotOpacity }}
+                className="absolute inset-0 pointer-events-none transition-opacity duration-300"
+              />
+              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-amber-500/10 to-transparent rounded-bl-full pointer-events-none transition-transform duration-700 ease-out group-hover:scale-125 origin-top-right" />
 
-            <div>
-              <div className="flex items-center justify-between mb-6">
-                <span className="px-2.5 py-1 rounded-md text-[9px] font-mono uppercase tracking-widest bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5 font-semibold">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  {lang === "en" ? "Verified Owner" : "Pemilik Resmi"}
-                </span>
-                <ShieldCheck className="w-5 h-5 text-neutral-400 dark:text-white/30" />
-              </div>
+              <div className="relative">
+                <div className="flex items-center justify-between mb-6">
+                  <span className="px-2.5 py-1 rounded-md text-[9px] font-mono uppercase tracking-widest bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5 font-semibold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    {lang === "en" ? "Verified Owner" : "Pemilik Resmi"}
+                  </span>
+                  <ShieldCheck className="w-5 h-5 text-neutral-400 dark:text-white/30 transition-colors duration-300 group-hover:text-emerald-500" />
+                </div>
 
-              <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-600 p-[2px] mb-6 shadow-lg shadow-amber-500/15">
-                <div className="w-full h-full bg-white dark:bg-[#0A0A0B] rounded-[14px] flex items-center justify-center text-amber-500 font-mono text-2xl md:text-3xl font-bold">
-                  DA
+                <motion.div
+                  initial={reduced ? false : { scale: 0.8, opacity: 0 }}
+                  whileInView={{ scale: 1, opacity: 1 }}
+                  viewport={{ once: true }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 200,
+                    damping: 16,
+                    delay: 0.25,
+                  }}
+                  whileHover={reduced ? undefined : { rotate: -4, scale: 1.06 }}
+                  className="w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-600 p-[2px] mb-6 shadow-lg shadow-amber-500/15"
+                >
+                  <div className="w-full h-full bg-white dark:bg-[#0A0A0B] rounded-[14px] flex items-center justify-center text-amber-500 font-mono text-2xl md:text-3xl font-bold">
+                    DA
+                  </div>
+                </motion.div>
+
+                <h3 className="text-xl md:text-2xl font-bold text-neutral-900 dark:text-white tracking-tight">
+                  Diva Alfahrizy
+                </h3>
+                <p className="text-amber-600 dark:text-amber-400 text-xs font-mono font-medium mt-1">
+                  Mid-Level Fullstack & UI/UX
+                </p>
+
+                <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400 text-xs mt-3">
+                  <MapPin className="w-3.5 h-3.5 text-neutral-400" />
+                  <span>Indonesia (UTC+7)</span>
                 </div>
               </div>
 
-              <h3 className="text-xl md:text-2xl font-bold text-neutral-900 dark:text-white tracking-tight">
-                Diva Alfahrizy
-              </h3>
-              <p className="text-amber-600 dark:text-amber-400 text-xs font-mono font-medium mt-1">
-                Mid-Level Fullstack & UI/UX
-              </p>
-
-              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400 text-xs mt-3">
-                <MapPin className="w-3.5 h-3.5 text-neutral-400" />
-                <span>Indonesia (UTC+7)</span>
-              </div>
-            </div>
-
-            <div className="mt-8 pt-6 border-t border-neutral-100 dark:border-white/5 space-y-3 font-mono text-xs text-neutral-600 dark:text-neutral-300">
-              <div className="flex items-center justify-between">
-                <span className="text-neutral-400 dark:text-white/40">
-                  EXPERIENCE
-                </span>
-                <span className="font-semibold text-neutral-900 dark:text-white">
-                  Intermediate / Mid
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-neutral-400 dark:text-white/40">
-                  SPECIALTY
-                </span>
-                <span className="font-semibold text-neutral-900 dark:text-white">
-                  0ms SPA & APIs
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-neutral-400 dark:text-white/40">
-                  STATUS
-                </span>
-                <span className="text-emerald-500 font-semibold flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> Ready
-                </span>
-              </div>
-            </div>
+              <motion.div
+                initial="hidden"
+                whileInView="show"
+                viewport={{ once: true }}
+                variants={{
+                  show: {
+                    transition: { staggerChildren: 0.1, delayChildren: 0.4 },
+                  },
+                }}
+                className="relative mt-8 pt-6 border-t border-neutral-100 dark:border-white/5 space-y-3 font-mono text-xs text-neutral-600 dark:text-neutral-300"
+              >
+                {[
+                  {
+                    k: "EXPERIENCE",
+                    v: <>Intermediate / Mid</>,
+                    c: "text-neutral-900 dark:text-white",
+                  },
+                  {
+                    k: "SPECIALTY",
+                    v: <>0ms SPA & APIs</>,
+                    c: "text-neutral-900 dark:text-white",
+                  },
+                  {
+                    k: "STATUS",
+                    v: (
+                      <span className="flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" /> Ready
+                      </span>
+                    ),
+                    c: "text-emerald-500",
+                  },
+                ].map((row) => (
+                  <motion.div
+                    key={row.k}
+                    variants={{
+                      hidden: { opacity: 0, x: -12 },
+                      show: {
+                        opacity: 1,
+                        x: 0,
+                        transition: { duration: 0.6, ease: EASE },
+                      },
+                    }}
+                    className="flex items-center justify-between"
+                  >
+                    <span className="text-neutral-400 dark:text-white/40">
+                      {row.k}
+                    </span>
+                    <span className={`font-semibold ${row.c}`}>{row.v}</span>
+                  </motion.div>
+                ))}
+              </motion.div>
+            </motion.div>
           </motion.div>
 
           {/* Right Bio & Highlights (Col 8) */}
           <div className="lg:col-span-8 flex flex-col justify-between space-y-8">
             {/* Bio Card */}
             <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6 }}
+              {...reveal(0, 32, 0)}
+              whileHover={reduced ? undefined : { y: -3 }}
               className="rounded-3xl bg-white dark:bg-[#131316] p-8 md:p-10 border border-neutral-200/80 dark:border-white/10 shadow-xl relative"
               id="owner-bio-content"
             >
               <div className="flex items-center gap-2 text-neutral-400 dark:text-white/40 text-[10px] font-mono uppercase tracking-widest mb-4">
-                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <motion.span
+                  animate={reduced ? undefined : { rotate: [0, 15, -10, 0] }}
+                  transition={{
+                    duration: 4,
+                    repeat: Infinity,
+                    repeatDelay: 3,
+                    ease: "easeInOut",
+                  }}
+                  className="inline-flex"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                </motion.span>
                 <span>
                   {lang === "en" ? "Personal Statement" : "Pernyataan Pribadi"}
                 </span>
               </div>
 
-              <p className="text-neutral-700 dark:text-neutral-200 text-sm md:text-base leading-relaxed mb-4 font-normal">
-                {bioParagraph1}
-              </p>
+              <ScrollParagraph text={bioParagraph1} reduced={reduced} />
               <p className="text-neutral-600 dark:text-neutral-400 text-sm md:text-base leading-relaxed font-light">
                 {bioParagraph2}
               </p>
@@ -172,16 +320,13 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ lang, dict }) => {
               {highlights.map((item, idx) => (
                 <motion.div
                   key={idx}
-                  initial={{ opacity: 0, y: 15 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.2 + idx * 0.1, duration: 0.5 }}
-                  whileHover={{ y: -4 }}
-                  className="rounded-2xl bg-white dark:bg-[#131316] p-6 border border-neutral-200/70 dark:border-white/10 hover:border-amber-500/40 transition-all duration-300 shadow-sm flex flex-col justify-between"
+                  {...reveal(0.15 + idx * 0.12, 0, 28)}
+                  whileHover={reduced ? undefined : { y: -6 }}
+                  className="group/card rounded-2xl bg-white dark:bg-[#131316] p-6 border border-neutral-200/70 dark:border-white/10 hover:border-amber-500/40 hover:shadow-lg hover:shadow-amber-500/5 transition-[border-color,box-shadow] duration-300 shadow-sm flex flex-col justify-between"
                   id={`highlight-card-${idx}`}
                 >
                   <div className="mb-4">
-                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-3.5 transition-transform duration-500 ease-out group-hover/card:-rotate-6 group-hover/card:scale-110">
                       {highlightIcons[idx] || (
                         <Zap className="w-5 h-5 text-amber-500" />
                       )}
@@ -193,7 +338,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ lang, dict }) => {
                       {item.desc}
                     </p>
                   </div>
-                  <div className="h-0.5 w-8 bg-amber-500/40 rounded-full mt-2" />
+                  <div className="h-0.5 w-8 bg-amber-500/40 rounded-full mt-2 transition-all duration-500 ease-out group-hover/card:w-full" />
                 </motion.div>
               ))}
             </div>
