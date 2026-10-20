@@ -1,10 +1,9 @@
-
+import { answerPortfolio } from "@/src/rag/answer";
 import express, {
   type Request,
   type Response,
   type NextFunction,
 } from "express";
-import { answerPortfolio } from "../src/rag/answer.ts";
 
 const app = express();
 
@@ -36,11 +35,7 @@ app.get("/api/health", (_req: Request, res: Response) => {
 app.post("/api/portfolio-chat", (req: Request, res: Response) => {
   const messages: unknown = req.body?.messages;
 
-  if (
-    !Array.isArray(messages) ||
-    messages.length < 1 ||
-    messages.length > 50
-  ) {
+  if (!Array.isArray(messages) || messages.length < 1 || messages.length > 50) {
     return res.status(400).json({
       error: "Messages must contain 1–50 items.",
     });
@@ -52,9 +47,7 @@ app.post("/api/portfolio-chat", (req: Request, res: Response) => {
     });
   }
 
-  const last = [...messages]
-    .reverse()
-    .find((m) => m.role === "user");
+  const last = [...messages].reverse().find((m) => m.role === "user");
 
   if (!last?.content.trim()) {
     return res.status(400).json({
@@ -69,12 +62,7 @@ app.post("/api/portfolio-chat", (req: Request, res: Response) => {
   });
 });
 
-app.use((
-  error: unknown,
-  _req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
+app.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {
   const type = (error as { type?: string } | null)?.type;
 
   if (type === "entity.parse.failed") {
