@@ -4,7 +4,7 @@ import express, {
   type Response,
   type NextFunction,
 } from "express";
-import { answerPortfolio } from "../src/rag/answer";
+import { answerPortfolio } from "../src/rag/answer.ts";
 
 const app = express();
 
